@@ -961,7 +961,7 @@
                         <th>EKS</th>
                         <th>VPCs</th>
                         <th>Subnets</th>
-                        <th>Firewalls</th>
+                        <th>Firewalls (NFW / WAF)</th>
                         <th>S3 Buckets</th>
                         <th>RDS</th>
                         <th>Lambda</th>
@@ -981,8 +981,15 @@
                         <td>
                             {% set nfw = acct.resource_counts.get('network_firewalls', 0) %}
                             {% set waf = acct.resource_counts.get('waf_web_acls', 0) %}
-                            {% set total_fw = nfw + waf %}
-                            <span title="AWS Network Firewalls: {{ nfw }} | WAF Web ACLs: {{ waf }}">{{ total_fw }}</span>
+                            {% if nfw > 0 or waf > 0 %}
+                            <span title="AWS Network Firewalls: {{ nfw }} | AWS WAF Web ACLs: {{ waf }}">
+                                {% if nfw > 0 %}<strong style="color:#ef4444;">{{ nfw }}</strong> <span style="font-size:0.72rem; color:var(--text-muted);">NFW</span>{% endif %}
+                                {% if nfw > 0 and waf > 0 %} <span style="color:var(--text-muted);">/</span> {% endif %}
+                                {% if waf > 0 %}<strong style="color:var(--accent-primary, #6366f1);">{{ waf }}</strong> <span style="font-size:0.72rem; color:var(--text-muted);">WAF</span>{% endif %}
+                            </span>
+                            {% else %}
+                            <span style="color:var(--text-muted);">0</span>
+                            {% endif %}
                         </td>
                         <td>{{ acct.resource_counts.get('s3_buckets', 0) }}</td>
                         <td>{{ acct.resource_counts.get('rds_instances', 0) + acct.resource_counts.get('rds_clusters', 0) }}</td>

@@ -64,17 +64,27 @@ def build_topology(inventory: dict) -> dict:
     # Instead of creating messy route table nodes with 50+ diagonal lines,
     # we inspect route tables to classify subnets into architectural tiers:
     # - "public": Has default route to an Internet Gateway
-    # - "app": Has default route to a NAT Gateway or VPC peering/TGW
+    # - "app": Has default route to a NAT Gateway or VPC peering/TGW/NFW
     # - "db": Isolated subnet with only local routes
     public_subnets = set()
     nat_subnets = set()
     subnet_to_nat = {}
+
+    firewalls = networking.get("network_firewalls", [])
+    nfw_endpoints = set()
+    nfw_subnets = set()
+    for fw in firewalls:
+        for ep in fw.get("endpoint_ids", []):
+            nfw_endpoints.add(ep)
+        for s in fw.get("subnet_mappings", []):
+            nfw_subnets.add(s)
 
     route_tables = networking.get("route_tables", [])
     for rt in route_tables:
         routes = rt.get("routes", [])
         has_igw = any(r.get("target", "").startswith("igw-") for r in routes)
         nat_target = next((r.get("target") for r in routes if r.get("target", "").startswith("nat-")), None)
+        nfw_target = next((r.get("target") for r in routes if r.get("target") in nfw_endpoints), None)
 
         for assoc in rt.get("associations", []):
             sub_id = assoc.get("subnet_id")
@@ -84,6 +94,8 @@ def build_topology(inventory: dict) -> dict:
                 elif nat_target:
                     nat_subnets.add(sub_id)
                     subnet_to_nat[sub_id] = nat_target
+                elif nfw_target:
+                    nat_subnets.add(sub_id)
 
     # ── 2. VPC Network Enclosures ─────────────────────────────────────
     vpcs = networking.get("vpcs", [])
@@ -108,7 +120,11 @@ def build_topology(inventory: dict) -> dict:
         az = subnet.get("availability_zone", "")
 
         name_lower = (name or "").lower()
-        if "pub" in name_lower or subnet_id in public_subnets or subnet.get("map_public_ip_on_launch", False):
+        if subnet_id in nfw_subnets or "firewall" in name_lower or "nfw" in name_lower:
+            tier = "public"
+            subnet_type = "subnet_public"
+            tier_title = "Firewall Subnet"
+        elif "pub" in name_lower or subnet_id in public_subnets or subnet.get("map_public_ip_on_launch", False):
             tier = "public"
             subnet_type = "subnet_public"
             tier_title = "Public Subnet"
@@ -183,13 +199,34 @@ def build_topology(inventory: dict) -> dict:
                 add_edge(vgw_id, vpc_id, "Site-to-Site VPN", "gateway")
 
     # AWS Network Firewalls
-    firewalls = networking.get("network_firewalls", [])
     for fw in firewalls:
         fw_id = fw.get("name") or fw.get("resource_id") or fw.get("id")
         if not fw_id:
             continue
         vpc_id = fw.get("vpc_id")
-        add_node(fw_id, "network_firewall", f"Firewall: {fw_id}", parent=vpc_id, data=fw, tier="ingress")
+        status = fw.get("status", "ACTIVE")
+        label = f"Network Firewall: {fw_id}\n({status})"
+
+        fw_subnets = [s for s in fw.get("subnet_mappings", []) if s in node_ids]
+        target_parent = fw_subnets[0] if fw_subnets else (vpc_id if vpc_id in node_ids else None)
+        tier = "public" if fw_subnets else "ingress"
+
+        add_node(fw_id, "network_firewall", label, parent=target_parent, data=fw, tier=tier)
+
+        # Connect to VPC boundary
+        if vpc_id and vpc_id in node_ids:
+            add_edge(fw_id, vpc_id, "Inspects VPC", "gateway")
+
+        # Connect from IGW if present
+        if igws:
+            first_igw = igws[0].get("resource_id") or igws[0].get("igw_id") or igws[0].get("id")
+            if first_igw and first_igw in node_ids:
+                add_edge(first_igw, fw_id, "Ingress Inspection", "traffic")
+
+        # Connect to Transit Gateway if attached
+        tgw_id = fw.get("transit_gateway_id")
+        if tgw_id and tgw_id in node_ids:
+            add_edge(tgw_id, fw_id, "TGW Inspection", "tgw_attachment")
 
     # AWS WAF Web ACLs
     waf_acls = networking.get("waf_web_acls", [])

@@ -190,7 +190,9 @@ class NetworkingCollector(BaseCollector):
                         "target": (
                             r.get("GatewayId") or r.get("NatGatewayId") or
                             r.get("TransitGatewayId") or r.get("VpcPeeringConnectionId") or
-                            r.get("NetworkInterfaceId") or r.get("InstanceId") or "local"
+                            r.get("VpcEndpointId") or r.get("NetworkInterfaceId") or
+                            r.get("InstanceId") or r.get("CarrierGatewayId") or
+                            r.get("LocalGatewayId") or r.get("CoreNetworkArn") or "local"
                         ),
                         "state": r.get("State"),
                     }
@@ -643,32 +645,66 @@ class NetworkingCollector(BaseCollector):
 
     def _collect_network_firewalls(self) -> list[dict]:
         nfw = self._get_client("network-firewall")
-        firewalls = self._safe_call(
-            lambda: nfw.list_firewalls().get("Firewalls", []),
-            default=[],
-        )
-        results = []
-        for fw_summary in firewalls:
-            fw_detail = self._safe_call(
-                lambda name=fw_summary.get("FirewallName"): nfw.describe_firewall(
-                    FirewallName=name
-                ),
-                default={},
+        # Paginate to ensure all firewalls across all pages are collected
+        firewalls = self._safe_paginate(nfw, "list_firewalls", "Firewalls")
+        if not firewalls:
+            # Fallback if paginator not available
+            firewalls = self._safe_call(
+                lambda: nfw.list_firewalls().get("Firewalls", []),
+                default=[],
             )
-            if not fw_detail:
+
+        results = []
+        for fw_summary in (firewalls or []):
+            fw_name = fw_summary.get("FirewallName", "")
+            fw_arn = fw_summary.get("FirewallArn", "")
+            if not fw_name and not fw_arn:
                 continue
-            fw = fw_detail.get("Firewall", {})
-            status = fw_detail.get("FirewallStatus", {}).get("Status", "READY")
+
+            # Fetch detailed firewall definition via ARN (exact) or Name
+            fw_detail = {}
+            if fw_arn:
+                fw_detail = self._safe_call(nfw.describe_firewall, default={}, FirewallArn=fw_arn)
+            if not fw_detail and fw_name:
+                fw_detail = self._safe_call(nfw.describe_firewall, default={}, FirewallName=fw_name)
+
+            fw = (fw_detail or {}).get("Firewall", {})
+            fw_status = (fw_detail or {}).get("FirewallStatus", {})
+
+            # Exact status: 'PROVISIONING' | 'DELETING' | 'READY'
+            raw_status = fw_status.get("Status")
+            if raw_status:
+                status = raw_status
+            elif fw_detail:
+                status = "READY"
+            else:
+                status = "ACTIVE"
+
+            # Extract VPC Endpoint IDs deployed for each Availability Zone
+            endpoint_ids = []
+            sync_states = fw_status.get("SyncStates", {})
+            for sync in sync_states.values():
+                if isinstance(sync, dict):
+                    att = sync.get("Attachment", {})
+                    ep_id = att.get("EndpointId")
+                    if ep_id:
+                        endpoint_ids.append(ep_id)
+
             results.append({
                 "resource_type": "network_firewall",
-                "resource_id": fw.get("FirewallArn", fw_summary.get("FirewallArn", "")),
-                "name": fw.get("FirewallName", ""),
+                "resource_id": fw.get("FirewallArn") or fw_arn,
+                "name": fw.get("FirewallName") or fw_name,
                 "status": status,
                 "vpc_id": fw.get("VpcId"),
+                "transit_gateway_id": fw.get("TransitGatewayId"),
                 "subnet_mappings": [
-                    s.get("SubnetId") for s in fw.get("SubnetMappings", [])
+                    s.get("SubnetId") for s in fw.get("SubnetMappings", []) if s.get("SubnetId")
                 ],
                 "firewall_policy_arn": fw.get("FirewallPolicyArn"),
+                "endpoint_ids": endpoint_ids,
+                "delete_protection": fw.get("DeleteProtection", False),
+                "description": fw.get("Description", ""),
+                "sync_state_summary": fw_status.get("ConfigurationSyncStateSummary", ""),
                 "tags": self._extract_tags(fw),
                 "region": self.region,
                 "account_id": self.account_id,
