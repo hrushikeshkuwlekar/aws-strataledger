@@ -1,6 +1,6 @@
 # 🛰️ AWS StrataLedger — Engineering Specification
 
-**Version:** 1.0.0  
+**Version:** 1.0.1  
 **Product Name:** AWS StrataLedger (`aws-strataledger`)  
 **Package:** `src/aws_strataledger`  
 **License:** MIT  

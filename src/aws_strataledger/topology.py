@@ -88,7 +88,9 @@ def build_topology(inventory: dict) -> dict:
     # ── 2. VPC Network Enclosures ─────────────────────────────────────
     vpcs = networking.get("vpcs", [])
     for vpc in vpcs:
-        vpc_id = vpc["resource_id"]
+        vpc_id = vpc.get("resource_id") or vpc.get("vpc_id") or vpc.get("id")
+        if not vpc_id:
+            continue
         name = vpc.get("name") or vpc_id
         cidr = vpc.get("cidr_block", "")
         label = f"{name}\n{cidr}" if cidr and cidr != name else name
@@ -97,7 +99,9 @@ def build_topology(inventory: dict) -> dict:
     # ── 3. Subnets with Architecture Tiers ────────────────────────────
     subnets = networking.get("subnets", [])
     for subnet in subnets:
-        subnet_id = subnet["resource_id"]
+        subnet_id = subnet.get("resource_id") or subnet.get("subnet_id") or subnet.get("id")
+        if not subnet_id:
+            continue
         vpc_id = subnet.get("vpc_id")
         name = subnet.get("name") or subnet_id
         cidr = subnet.get("cidr_block", "")
@@ -128,7 +132,9 @@ def build_topology(inventory: dict) -> dict:
     # Internet Gateways (IGW)
     igws = networking.get("internet_gateways", [])
     for igw in igws:
-        igw_id = igw["resource_id"]
+        igw_id = igw.get("resource_id") or igw.get("igw_id") or igw.get("id")
+        if not igw_id:
+            continue
         label = igw.get("name") or igw_id
         add_node(igw_id, "internet_gateway", label, data=igw, tier="ingress")
         for att in igw.get("attachments", []):
@@ -139,7 +145,9 @@ def build_topology(inventory: dict) -> dict:
     # AWS Transit Gateways (TGW) - Central Hub
     tgws = networking.get("transit_gateways", [])
     for tgw in tgws:
-        tgw_id = tgw["resource_id"]
+        tgw_id = tgw.get("resource_id") or tgw.get("tgw_id") or tgw.get("id")
+        if not tgw_id:
+            continue
         label = tgw.get("name") or tgw_id
         add_node(tgw_id, "transit_gateway", label, data=tgw, tier="ingress")
 
@@ -156,7 +164,7 @@ def build_topology(inventory: dict) -> dict:
     for pcx in peerings:
         req_vpc = pcx.get("requester_vpc")
         acc_vpc = pcx.get("accepter_vpc")
-        pcx_id = pcx["resource_id"]
+        pcx_id = pcx.get("resource_id") or pcx.get("pcx_id") or pcx.get("id")
         name = pcx.get("name") or pcx_id
         if req_vpc and acc_vpc and req_vpc in node_ids and acc_vpc in node_ids:
             add_edge(req_vpc, acc_vpc, f"VPC Peering: {name}", "peering")
@@ -164,7 +172,9 @@ def build_topology(inventory: dict) -> dict:
     # VPN Gateways
     vgws = networking.get("vpn_gateways", [])
     for vgw in vgws:
-        vgw_id = vgw["resource_id"]
+        vgw_id = vgw.get("resource_id") or vgw.get("vgw_id") or vgw.get("id")
+        if not vgw_id:
+            continue
         label = vgw.get("name") or vgw_id
         add_node(vgw_id, "vpn_gateway", label, data=vgw, tier="ingress")
         for att in vgw.get("vpc_attachments", []):
@@ -175,27 +185,35 @@ def build_topology(inventory: dict) -> dict:
     # AWS Network Firewalls
     firewalls = networking.get("network_firewalls", [])
     for fw in firewalls:
-        fw_id = fw.get("name", fw["resource_id"])
+        fw_id = fw.get("name") or fw.get("resource_id") or fw.get("id")
+        if not fw_id:
+            continue
         vpc_id = fw.get("vpc_id")
         add_node(fw_id, "network_firewall", f"Firewall: {fw_id}", parent=vpc_id, data=fw, tier="ingress")
 
     # AWS WAF Web ACLs
     waf_acls = networking.get("waf_web_acls", [])
     for acl in waf_acls:
-        acl_id = acl.get("resource_id", acl.get("name"))
+        acl_id = acl.get("resource_id") or acl.get("name") or acl.get("id")
+        if not acl_id:
+            continue
         acl_name = acl.get("name", acl_id)
         add_node(acl_id, "waf_web_acl", f"WAF: {acl_name}", data=acl, tier="ingress")
 
     # ── 5. NAT Gateways (Public Tier Egress) ──────────────────────────
     nats = networking.get("nat_gateways", [])
     for nat in nats:
-        nat_id = nat["resource_id"]
+        nat_id = nat.get("resource_id") or nat.get("nat_id") or nat.get("id")
+        if not nat_id:
+            continue
         label = nat.get("name") or nat_id
         subnet_id = nat.get("subnet_id")
         add_node(nat_id, "nat_gateway", f"NAT: {label}", parent=subnet_id, data=nat, tier="public")
         # Connect NAT to IGW
         for igw in igws:
-            add_edge(nat_id, igw["resource_id"], "Outbound", "egress")
+            igw_id = igw.get("resource_id") or igw.get("igw_id") or igw.get("id")
+            if igw_id:
+                add_edge(nat_id, igw_id, "Outbound", "egress")
 
     # Connect Private App subnets to their respective NAT Gateway
     for sub_id, nat_id in subnet_to_nat.items():
@@ -205,7 +223,9 @@ def build_topology(inventory: dict) -> dict:
     # ── 6. Load Balancers (ALB / NLB) ────────────────────────────────
     lbs = networking.get("load_balancers_v2", [])
     for lb in lbs:
-        lb_id = lb.get("name", lb["resource_id"])
+        lb_id = lb.get("name") or lb.get("resource_id") or lb.get("id")
+        if not lb_id:
+            continue
         vpc_id = lb.get("vpc_id")
         scheme = lb.get("scheme", "internet-facing")
         lb_type = (lb.get("type") or "application").upper()[:3]
@@ -222,14 +242,18 @@ def build_topology(inventory: dict) -> dict:
 
         # If internet-facing, connect from IGW
         if "internet" in scheme and igws:
-            add_edge(igws[0]["resource_id"], lb_id, "HTTP/HTTPS", "traffic")
+            first_igw = igws[0].get("resource_id") or igws[0].get("igw_id") or igws[0].get("id")
+            if first_igw:
+                add_edge(first_igw, lb_id, "HTTP/HTTPS", "traffic")
 
     # ── 7. Compute Tier (EC2, EKS, ASG, Lambda) ──────────────────────
     # EC2 Instances
     instances = compute.get("ec2_instances", [])
     inst_by_id = {}
     for inst in instances:
-        inst_id = inst["resource_id"]
+        inst_id = inst.get("resource_id") or inst.get("instance_id") or inst.get("id")
+        if not inst_id:
+            continue
         inst_by_id[inst_id] = inst
         subnet_id = inst.get("subnet_id")
         name = inst.get("name") or inst_id
@@ -244,7 +268,9 @@ def build_topology(inventory: dict) -> dict:
     # Auto Scaling Groups
     asgs = compute.get("auto_scaling_groups", [])
     for asg in asgs:
-        asg_name = asg.get("name", asg["resource_id"])
+        asg_name = asg.get("name") or asg.get("resource_id") or asg.get("id")
+        if not asg_name:
+            continue
         vpc_subnets = asg.get("vpc_zone_identifier", "").split(",")
         parent = vpc_subnets[0] if vpc_subnets and vpc_subnets[0] in node_ids else None
         asg_label = f"ASG: {asg_name}\n({asg.get('desired_capacity', 0)} instances)"
@@ -253,7 +279,9 @@ def build_topology(inventory: dict) -> dict:
     # EKS Clusters
     eks_clusters = compute.get("eks_clusters", [])
     for cluster in eks_clusters:
-        cluster_name = cluster.get("name", cluster["resource_id"])
+        cluster_name = cluster.get("name") or cluster.get("resource_id") or cluster.get("id")
+        if not cluster_name:
+            continue
         vpc_id = cluster.get("vpc_id")
         version = cluster.get("version", "")
         status = cluster.get("status", "ACTIVE")
@@ -269,7 +297,7 @@ def build_topology(inventory: dict) -> dict:
     target_groups = networking.get("target_groups", [])
     for tg in target_groups:
         for lb_arn in tg.get("load_balancer_arns", []):
-            matching_lb = next((l.get("name") for l in lbs if l["resource_id"] == lb_arn), None)
+            matching_lb = next((l.get("name") for l in lbs if (l.get("resource_id") == lb_arn or l.get("name") == lb_arn)), None)
             if matching_lb and matching_lb in node_ids:
                 for inst_id in inst_by_id:
                     # Link ALB to compute instances in the same VPC
@@ -282,7 +310,9 @@ def build_topology(inventory: dict) -> dict:
     # VPC Lambda Functions
     functions = compute.get("lambda_functions", [])
     for fn in functions:
-        fn_name = fn.get("name", fn["resource_id"])
+        fn_name = fn.get("name") or fn.get("resource_id") or fn.get("id")
+        if not fn_name:
+            continue
         vpc_config = fn.get("vpc_config", {})
         vpc_id = vpc_config.get("VpcId")
         runtime = fn.get("runtime", "")
@@ -299,7 +329,9 @@ def build_topology(inventory: dict) -> dict:
     # VPC Endpoints
     endpoints = networking.get("vpc_endpoints", [])
     for ep in endpoints:
-        ep_id = ep["resource_id"]
+        ep_id = ep.get("resource_id") or ep.get("vpc_endpoint_id") or ep.get("id")
+        if not ep_id:
+            continue
         vpc_id = ep.get("vpc_id")
         svc_name = ep.get("service_name", "").split(".")[-1]
         label = f"Endpoint: {svc_name}"
@@ -309,21 +341,28 @@ def build_topology(inventory: dict) -> dict:
     # Aurora DB Clusters
     rds_clusters = storage.get("rds_clusters", [])
     for cluster in rds_clusters:
-        cluster_id = cluster.get("name", cluster["resource_id"])
+        cluster_id = cluster.get("name") or cluster.get("resource_id") or cluster.get("id")
+        if not cluster_id:
+            continue
         engine = cluster.get("engine", "")
         status = cluster.get("status", "available")
-        target_parent = vpc_id
-        db_named_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and (
-            "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
-        )]
-        if db_named_subnets and db_named_subnets[0] in node_ids:
-            target_parent = db_named_subnets[0]
-        add_node(cluster_id, "rds_cluster", label, parent=target_parent, data=cluster, tier="db")
+        cluster_label = f"Aurora: {cluster_id}\n{engine} • {status}"
+        cluster_vpc = cluster.get("vpc_id")
+        target_parent = cluster_vpc
+        if cluster_vpc:
+            db_named_subnets = [s.get("resource_id") or s.get("subnet_id") for s in subnets if s.get("vpc_id") == cluster_vpc and (
+                "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
+            )]
+            if db_named_subnets and db_named_subnets[0] in node_ids:
+                target_parent = db_named_subnets[0]
+        add_node(cluster_id, "rds_cluster", cluster_label, parent=target_parent, data=cluster, tier="db")
 
     # RDS Instances
     rds_instances = storage.get("rds_instances", [])
     for db in rds_instances:
-        db_id = db.get("name", db["resource_id"])
+        db_id = db.get("name") or db.get("resource_id") or db.get("id")
+        if not db_id:
+            continue
         vpc_id = db.get("vpc_id")
         engine = db.get("engine", "")
         status = db.get("status", "available")
@@ -331,15 +370,16 @@ def build_topology(inventory: dict) -> dict:
 
         # Place inside DB subnet if available, otherwise fallback to private subnet or VPC
         target_parent = vpc_id
-        db_named_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and (
-            "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
-        )]
-        if db_named_subnets and db_named_subnets[0] in node_ids:
-            target_parent = db_named_subnets[0]
-        else:
-            priv_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and s["resource_id"] not in public_subnets]
-            if priv_subnets and priv_subnets[0] in node_ids:
-                target_parent = priv_subnets[0]
+        if vpc_id:
+            db_named_subnets = [s.get("resource_id") or s.get("subnet_id") for s in subnets if s.get("vpc_id") == vpc_id and (
+                "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
+            )]
+            if db_named_subnets and db_named_subnets[0] in node_ids:
+                target_parent = db_named_subnets[0]
+            else:
+                priv_subnets = [s.get("resource_id") or s.get("subnet_id") for s in subnets if s.get("vpc_id") == vpc_id and (s.get("resource_id") or s.get("subnet_id")) not in public_subnets]
+                if priv_subnets and priv_subnets[0] in node_ids:
+                    target_parent = priv_subnets[0]
 
         add_node(db_id, "rds_instance", label, parent=target_parent, data=db, tier="db")
 
@@ -348,7 +388,9 @@ def build_topology(inventory: dict) -> dict:
             for member in cluster.get("members", []):
                 if member.get("instance_id") == db_id:
                     role = "Writer" if member.get("is_writer") else "Reader"
-                    add_edge(cluster.get("name"), db_id, role, "database")
+                    c_name = cluster.get("name") or cluster.get("resource_id")
+                    if c_name:
+                        add_edge(c_name, db_id, role, "database")
 
         # Connect app instances to database in same VPC
         if vpc_id:
@@ -360,7 +402,9 @@ def build_topology(inventory: dict) -> dict:
     # EFS File Systems
     efs_filesystems = storage.get("efs_file_systems", [])
     for efs in efs_filesystems:
-        efs_id = efs.get("name") or efs["resource_id"]
+        efs_id = efs.get("name") or efs.get("resource_id") or efs.get("id")
+        if not efs_id:
+            continue
         label = f"EFS: {efs_id}"
         add_node(efs_id, "efs_file_system", label, data=efs, tier="db")
 
@@ -368,31 +412,41 @@ def build_topology(inventory: dict) -> dict:
     # Amazon S3 Buckets
     s3_buckets = s3_data.get("s3_buckets", []) or inventory.get("s3_buckets", [])
     for bucket in s3_buckets[:15]:  # show up to 15 key buckets
-        b_name = bucket.get("name") or bucket["resource_id"]
+        b_name = bucket.get("name") or bucket.get("resource_id") or bucket.get("id")
+        if not b_name:
+            continue
         add_node(b_name, "s3_bucket", f"S3: {b_name}", data=bucket, tier="regional")
 
     # DynamoDB Tables
     dynamo_tables = storage.get("dynamodb_tables", [])
     for table in dynamo_tables[:10]:
-        t_name = table.get("name") or table["resource_id"]
+        t_name = table.get("name") or table.get("resource_id") or table.get("id")
+        if not t_name:
+            continue
         add_node(t_name, "dynamodb_table", f"DynamoDB: {t_name}", data=table, tier="regional")
 
     # KMS Keys (Customer Managed)
     kms_keys = identity.get("kms_keys", [])
     for key in kms_keys[:6]:
-        key_id = key.get("alias") or key.get("key_id") or key["resource_id"]
+        key_id = key.get("alias") or key.get("key_id") or key.get("resource_id") or key.get("id")
+        if not key_id:
+            continue
         add_node(key_id, "kms_key", f"KMS: {key_id}", data=key, tier="regional")
 
     # Secrets Manager
     secrets = identity.get("secrets", [])
     for sec in secrets[:6]:
-        sec_name = sec.get("name") or sec["resource_id"]
+        sec_name = sec.get("name") or sec.get("resource_id") or sec.get("id")
+        if not sec_name:
+            continue
         add_node(sec_name, "secrets_manager", f"Secret: {sec_name}", data=sec, tier="regional")
 
     # CloudWatch Alarms
     alarms = monitoring.get("cloudwatch_alarms", [])
     for alm in alarms[:6]:
-        alm_name = alm.get("name") or alm["resource_id"]
+        alm_name = alm.get("name") or alm.get("resource_id") or alm.get("id")
+        if not alm_name:
+            continue
         state = alm.get("state", "OK")
         add_node(alm_name, "cloudwatch_alarm", f"Alarm: {alm_name} ({state})", data=alm, tier="regional")
 

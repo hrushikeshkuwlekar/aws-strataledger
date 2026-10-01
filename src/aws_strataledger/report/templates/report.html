@@ -1123,6 +1123,9 @@ const TOPOLOGIES = {{ topologies_json }};
 const SECURITY_DATA = {{ security_json }};
 const SUMMARY = {{ summary_json }};
 
+// Cytoscape instance handle (declared at top to prevent Temporal Dead Zone in theme init)
+let cy = null;
+
 // ── Theme (Light / Dark) ───────────────────────────────────────────
 function initTheme() {
     let saved = 'dark';
@@ -1148,7 +1151,7 @@ function applyTheme(theme) {
             text.textContent = 'Dark';
         }
     }
-    if (typeof cy !== 'undefined' && cy) {
+    if (cy) {
         updateCytoscapeTheme(theme);
     }
 }
@@ -1526,7 +1529,7 @@ applyFilters();
 // ══════════════════════════════════════════════════════════════════
 // TOPOLOGY DIAGRAM (Cytoscape.js — Official AWS Architecture Landscape)
 // ══════════════════════════════════════════════════════════════════
-let cy = null;
+// cy instance handle declared at top of script
 
 // Official AWS Architecture Vector SVG Icons Library
 function makeSvgUri(bgColor, innerSvg) {

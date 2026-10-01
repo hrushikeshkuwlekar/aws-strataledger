@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2026-10-02
+
+### 🐛 Critical Bug Fixes
+- **Dashboard Script Initialization (TDZ ReferenceError)**: Resolved JavaScript runtime crash (`ReferenceError: Cannot access 'cy' before initialization`) caused by hoisting Temporal Dead Zone when evaluating theme initialization before the Cytoscape graph variable declaration.
+  - Hoisted `let cy = null;` to the global script scope header.
+  - Restored full functionality to:
+    - **Resource Category Metric Tiles**: Correctly rendered percentage bars and breakdown tags on the Overview dashboard.
+    - **Inventory Explorer**: Restored instant multi-filter search, column sorting, pagination, and CSV data export.
+    - **Interactive AWS Reference Architecture Topology**: Canvas now initializes immediately with official AWS SVG icons, hierarchical tiered layouts, and node inspector cards.
+    - **Security & Compliance Tab**: Restored per-account posture checks (GuardDuty, Security Hub, CloudTrail multi-region, IAM MFA, public S3 buckets).
+    - **Tab Navigation**: Restored seamless switching between Overview, Inventory, Topology, and Security views.
+
 ## [1.0.0] - 2026-10-02
 
 ### 🏛️ AWS Reference Architecture Topology & Official Icons
