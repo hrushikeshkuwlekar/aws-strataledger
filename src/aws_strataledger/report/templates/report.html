@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="AWS StrataLedger - Multi-Account Infrastructure Inventory & Topology Report">
     <title>⚡ AWS StrataLedger — Infrastructure Report</title>
+    <script>
+        // Prevent theme flash before render
+        (function() {
+            try {
+                const saved = localStorage.getItem('strataledger-theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', saved);
+            } catch(e) {}
+        })();
+    </script>
     <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
     <style>
         /* ═══════════════════════════════════════════════════════════════
@@ -18,12 +27,20 @@
             --bg-secondary: #111827;
             --bg-card: rgba(17, 24, 39, 0.8);
             --bg-card-hover: rgba(30, 41, 59, 0.9);
+            --bg-card-subtle: rgba(22, 30, 49, 0.7);
             --bg-input: rgba(30, 41, 59, 0.6);
             --border-subtle: rgba(255, 255, 255, 0.06);
             --border-accent: rgba(99, 102, 241, 0.3);
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
             --text-muted: #64748b;
+            --header-bg: rgba(10, 14, 26, 0.85);
+            --nav-bg: rgba(10, 14, 26, 0.6);
+            --table-head-bg: rgba(30, 41, 59, 0.5);
+            --table-row-hover: rgba(99, 102, 241, 0.05);
+            --toolbar-bg: rgba(30, 41, 59, 0.5);
+            --canvas-bg: radial-gradient(circle at 50% 50%, rgba(17, 24, 39, 1), #0a0e1a);
+            --detail-bg: rgba(15, 23, 42, 0.95);
             --accent-blue: #6366f1;
             --accent-blue-glow: rgba(99, 102, 241, 0.15);
             --accent-cyan: #22d3ee;
@@ -46,6 +63,41 @@
             --radius-lg: 16px;
             --radius-xl: 20px;
             --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --glow-opacity: 0.08;
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #f1f5f9;
+            --bg-card: rgba(255, 255, 255, 0.9);
+            --bg-card-hover: rgba(248, 250, 252, 0.98);
+            --bg-card-subtle: rgba(241, 245, 249, 0.85);
+            --bg-input: #ffffff;
+            --border-subtle: rgba(0, 0, 0, 0.08);
+            --border-accent: rgba(99, 102, 241, 0.4);
+            --text-primary: #0f172a;
+            --text-secondary: #334155;
+            --text-muted: #64748b;
+            --header-bg: rgba(255, 255, 255, 0.9);
+            --nav-bg: rgba(248, 250, 252, 0.9);
+            --table-head-bg: rgba(241, 245, 249, 0.95);
+            --table-row-hover: rgba(99, 102, 241, 0.05);
+            --toolbar-bg: rgba(241, 245, 249, 0.9);
+            --canvas-bg: radial-gradient(circle at 50% 50%, #ffffff, #f1f5f9);
+            --detail-bg: rgba(255, 255, 255, 0.98);
+            --accent-blue: #4f46e5;
+            --accent-blue-glow: rgba(79, 70, 229, 0.12);
+            --accent-cyan: #0284c7;
+            --accent-green: #059669;
+            --accent-amber: #d97706;
+            --accent-red: #dc2626;
+            --accent-purple: #9333ea;
+            --accent-pink: #db2777;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --shadow-lg: 0 8px 32px rgba(0,0,0,0.08);
+            --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.1);
+            --glow-opacity: 0.03;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -57,6 +109,7 @@
             line-height: 1.6;
             min-height: 100vh;
             overflow-x: hidden;
+            transition: background 0.25s ease, color 0.25s ease;
         }
 
         /* ── Background Pattern ─────────────────────────────────────── */
@@ -66,9 +119,9 @@
             top: 0; left: 0;
             width: 100%; height: 100%;
             background:
-                radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-                radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+                radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, var(--glow-opacity)) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, var(--glow-opacity)) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(6, 182, 212, var(--glow-opacity)) 0%, transparent 50%);
             pointer-events: none;
             z-index: 0;
         }
@@ -76,11 +129,12 @@
         /* ── Header ─────────────────────────────────────────────────── */
         .header {
             position: sticky; top: 0; z-index: 100;
-            background: rgba(10, 14, 26, 0.85);
+            background: var(--header-bg);
             backdrop-filter: blur(20px) saturate(180%);
             -webkit-backdrop-filter: blur(20px) saturate(180%);
             border-bottom: 1px solid var(--border-subtle);
             padding: 0 2rem;
+            transition: background 0.25s ease, border-color 0.25s ease;
         }
 
         .header-inner {
@@ -125,10 +179,11 @@
             display: flex;
             gap: 4px;
             padding: 0 2rem;
-            background: rgba(10, 14, 26, 0.6);
+            background: var(--nav-bg);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border-subtle);
             position: sticky; top: 64px; z-index: 99;
+            transition: background 0.25s ease, border-color 0.25s ease;
         }
 
         .nav-tab {
@@ -314,7 +369,7 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             color: var(--text-muted);
-            background: rgba(30, 41, 59, 0.5);
+            background: var(--table-head-bg);
             border-bottom: 1px solid var(--border-subtle);
             cursor: pointer;
             user-select: none;
@@ -334,7 +389,7 @@
             transition: var(--transition);
         }
 
-        tbody tr:hover { background: rgba(99, 102, 241, 0.05); }
+        tbody tr:hover { background: var(--table-row-hover); }
 
         tbody td {
             padding: 10px 16px;
@@ -423,7 +478,7 @@
             display: flex;
             gap: 8px;
             padding: 12px 16px;
-            background: rgba(30, 41, 59, 0.5);
+            background: var(--toolbar-bg);
             border-bottom: 1px solid var(--border-subtle);
             flex-wrap: wrap;
             align-items: center;
@@ -447,7 +502,7 @@
         #topology-canvas {
             width: 100%;
             height: 600px;
-            background: radial-gradient(circle at 50% 50%, rgba(17, 24, 39, 1), var(--bg-primary));
+            background: var(--canvas-bg);
         }
 
         .topology-detail {
@@ -456,7 +511,7 @@
             width: 320px;
             max-height: calc(100% - 80px);
             overflow-y: auto;
-            background: rgba(15, 23, 42, 0.95);
+            background: var(--detail-bg);
             backdrop-filter: blur(16px);
             border: 1px solid var(--border-accent);
             border-radius: var(--radius-md);
@@ -557,56 +612,163 @@
         .check-status.fail { background: rgba(239, 68, 68, 0.15); color: #f87171; }
         .check-status.warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 
-        /* ── Category Bar Chart ─────────────────────────────────────── */
-        .bar-chart { padding: 1rem 0; }
-
-        .bar-row {
-            display: flex;
+        /* ── Theme Toggle Button ────────────────────────────────────── */
+        .theme-toggle-btn {
+            display: inline-flex;
             align-items: center;
-            gap: 1rem;
-            margin-bottom: 8px;
-        }
-
-        .bar-label {
-            width: 120px;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-family: inherit;
             font-size: 0.78rem;
-            color: var(--text-secondary);
-            text-align: right;
-            flex-shrink: 0;
+            font-weight: 600;
+            transition: var(--transition);
+            margin-left: 0.5rem;
         }
 
-        .bar-track {
-            flex: 1;
-            height: 24px;
-            background: rgba(30, 41, 59, 0.5);
-            border-radius: 6px;
-            overflow: hidden;
-            position: relative;
+        .theme-toggle-btn:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-card-hover);
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
         }
 
-        .bar-fill {
-            height: 100%;
-            border-radius: 6px;
-            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        .theme-toggle-icon {
+            font-size: 0.92rem;
+            line-height: 1;
+        }
+
+        /* ── Category Tiles Grid ────────────────────────────────────── */
+        .card-header-flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .card-subtitle {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .tile-view-hint {
+            font-size: 0.75rem;
+            color: var(--accent-blue);
+            font-weight: 600;
             display: flex;
             align-items: center;
-            padding-left: 8px;
-            font-size: 0.72rem;
-            font-weight: 600;
-            color: white;
-            min-width: fit-content;
+            gap: 4px;
+            background: var(--accent-blue-glow);
+            padding: 4px 10px;
+            border-radius: 12px;
         }
 
-        .bar-fill.compute { background: var(--gradient-amber); }
-        .bar-fill.networking { background: var(--gradient-blue); }
-        .bar-fill.storage { background: var(--gradient-green); }
-        .bar-fill.identity { background: var(--gradient-purple, linear-gradient(135deg, #7c3aed, #a855f7)); }
-        .bar-fill.security { background: var(--gradient-red); }
-        .bar-fill.monitoring { background: var(--gradient-cyan); }
-        .bar-fill.s3 { background: linear-gradient(135deg, #059669, #34d399); }
-        .bar-fill.iam { background: linear-gradient(135deg, #d97706, #fbbf24); }
-        .bar-fill.route53 { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
-        .bar-fill.organizations { background: linear-gradient(135deg, #be185d, #ec4899); }
+        .category-tiles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            gap: 1.1rem;
+        }
+
+        .category-tile {
+            background: var(--bg-card-subtle);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            padding: 1.15rem 1.15rem 1rem;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            user-select: none;
+        }
+
+        .category-tile::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: var(--tile-gradient, var(--gradient-blue));
+            border-radius: var(--radius-md) var(--radius-md) 0 0;
+        }
+
+        .category-tile:hover {
+            transform: translateY(-3px);
+            border-color: var(--tile-border, var(--border-accent));
+            box-shadow: var(--shadow-md), 0 0 16px var(--tile-glow, rgba(99, 102, 241, 0.15));
+            background: var(--bg-card-hover);
+        }
+
+        .tile-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.85rem;
+        }
+
+        .tile-icon-box {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+            background: var(--tile-bg-accent, rgba(99, 102, 241, 0.12));
+            border: 1px solid var(--border-subtle);
+        }
+
+        .tile-share {
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: var(--tile-bg-accent, rgba(255, 255, 255, 0.05));
+            color: var(--text-secondary);
+        }
+
+        .tile-body {
+            margin-bottom: 0.75rem;
+        }
+
+        .tile-count {
+            font-size: 1.85rem;
+            font-weight: 800;
+            line-height: 1.1;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+            font-feature-settings: "tnum";
+        }
+
+        .tile-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-top: 0.35rem;
+        }
+
+        .tile-bar-mini {
+            width: 100%;
+            height: 4px;
+            background: var(--border-subtle);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .tile-bar-mini-fill {
+            height: 100%;
+            border-radius: 2px;
+            background: var(--tile-gradient, var(--accent-blue));
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
 
         /* ── Export Button ───────────────────────────────────────────── */
         .export-btn {
@@ -667,6 +829,10 @@
             <span>📅 {{ generated_at }}</span>
             <span>⏱ {{ summary.scan_duration }}s</span>
             <span>📦 {{ summary.total_resources | default(0) }} resources</span>
+            <button class="theme-toggle-btn" id="theme-toggle-btn" onclick="toggleTheme()" title="Switch Light/Dark Theme" aria-label="Toggle theme">
+                <span class="theme-toggle-icon" id="theme-toggle-icon">🌙</span>
+                <span class="theme-toggle-text" id="theme-toggle-text">Dark</span>
+            </button>
         </div>
     </div>
 </header>
@@ -714,8 +880,14 @@
 
     <!-- Resource Distribution by Category -->
     <div class="card" style="margin-bottom: 2rem;">
-        <div class="card-title">Resource Distribution by Category</div>
-        <div class="bar-chart" id="category-chart"></div>
+        <div class="card-header-flex">
+            <div>
+                <div class="card-title">Resource Distribution by Category</div>
+                <div class="card-subtitle">Aggregated inventory across all services</div>
+            </div>
+            <div class="tile-view-hint">🔍 Click any tile to inspect in Inventory</div>
+        </div>
+        <div class="category-tiles-grid" id="category-chart"></div>
     </div>
 
     <!-- Per-Account Summary -->
@@ -729,7 +901,10 @@
                         <th>Alias</th>
                         <th>Regions</th>
                         <th>EC2</th>
+                        <th>EKS</th>
                         <th>VPCs</th>
+                        <th>Subnets</th>
+                        <th>Firewalls</th>
                         <th>S3 Buckets</th>
                         <th>RDS</th>
                         <th>Lambda</th>
@@ -743,7 +918,15 @@
                         <td>{{ acct.account_alias }}</td>
                         <td>{{ acct.regions | length }}</td>
                         <td>{{ acct.resource_counts.get('ec2_instances', 0) }}</td>
+                        <td>{{ acct.resource_counts.get('eks_clusters', 0) }}</td>
                         <td>{{ acct.resource_counts.get('vpcs', 0) }}</td>
+                        <td>{{ acct.resource_counts.get('subnets', 0) }}</td>
+                        <td>
+                            {% set nfw = acct.resource_counts.get('network_firewalls', 0) %}
+                            {% set waf = acct.resource_counts.get('waf_web_acls', 0) %}
+                            {% set total_fw = nfw + waf %}
+                            <span title="AWS Network Firewalls: {{ nfw }} | WAF Web ACLs: {{ waf }}">{{ total_fw }}</span>
+                        </td>
                         <td>{{ acct.resource_counts.get('s3_buckets', 0) }}</td>
                         <td>{{ acct.resource_counts.get('rds_instances', 0) + acct.resource_counts.get('rds_clusters', 0) }}</td>
                         <td>{{ acct.resource_counts.get('lambda_functions', 0) }}</td>
@@ -874,6 +1057,62 @@ const TOPOLOGIES = {{ topologies_json }};
 const SECURITY_DATA = {{ security_json }};
 const SUMMARY = {{ summary_json }};
 
+// ── Theme (Light / Dark) ───────────────────────────────────────────
+function initTheme() {
+    let saved = 'dark';
+    try {
+        saved = localStorage.getItem('strataledger-theme') || 'dark';
+    } catch(e) {}
+    applyTheme(saved);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+        localStorage.setItem('strataledger-theme', theme);
+    } catch(e) {}
+    const icon = document.getElementById('theme-toggle-icon');
+    const text = document.getElementById('theme-toggle-text');
+    if (icon && text) {
+        if (theme === 'light') {
+            icon.textContent = '☀️';
+            text.textContent = 'Light';
+        } else {
+            icon.textContent = '🌙';
+            text.textContent = 'Dark';
+        }
+    }
+    if (typeof cy !== 'undefined' && cy) {
+        updateCytoscapeTheme(theme);
+    }
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    const next = current === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+}
+
+function updateCytoscapeTheme(theme) {
+    if (!cy) return;
+    const isLight = theme === 'light';
+    cy.style()
+        .selector('node')
+        .style({
+            'color': isLight ? '#0f172a' : '#e2e8f0',
+            'text-outline-color': isLight ? '#ffffff' : '#0a0e1a',
+        })
+        .selector('edge')
+        .style({
+            'line-color': isLight ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.3)',
+            'color': isLight ? '#475569' : '#64748b',
+            'text-outline-color': isLight ? '#ffffff' : '#0a0e1a',
+        })
+        .update();
+}
+
+initTheme();
+
 // ── Tab Navigation ──────────────────────────────────────────────────
 document.querySelectorAll('.nav-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -888,28 +1127,150 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// DASHBOARD — Category Chart
+// DASHBOARD — Category Distribution Tiles
 // ══════════════════════════════════════════════════════════════════
+const CATEGORY_META = {
+    security: {
+        icon: '🛡️',
+        label: 'Security & Compliance',
+        gradient: 'linear-gradient(135deg, #dc2626, #ef4444)',
+        border: 'rgba(239, 68, 68, 0.5)',
+        glow: 'rgba(239, 68, 68, 0.22)',
+        bg: 'rgba(239, 68, 68, 0.12)'
+    },
+    iam: {
+        icon: '🔑',
+        label: 'IAM & Access',
+        gradient: 'linear-gradient(135deg, #d97706, #f59e0b)',
+        border: 'rgba(245, 158, 11, 0.5)',
+        glow: 'rgba(245, 158, 11, 0.22)',
+        bg: 'rgba(245, 158, 11, 0.12)'
+    },
+    monitoring: {
+        icon: '📈',
+        label: 'Monitoring & Ops',
+        gradient: 'linear-gradient(135deg, #06b6d4, #22d3ee)',
+        border: 'rgba(34, 211, 238, 0.5)',
+        glow: 'rgba(34, 211, 238, 0.22)',
+        bg: 'rgba(34, 211, 238, 0.12)'
+    },
+    networking: {
+        icon: '🌐',
+        label: 'Networking',
+        gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+        border: 'rgba(99, 102, 241, 0.5)',
+        glow: 'rgba(99, 102, 241, 0.22)',
+        bg: 'rgba(99, 102, 241, 0.12)'
+    },
+    compute: {
+        icon: '💻',
+        label: 'Compute & Containers',
+        gradient: 'linear-gradient(135deg, #ea580c, #f97316)',
+        border: 'rgba(249, 115, 22, 0.5)',
+        glow: 'rgba(249, 115, 22, 0.22)',
+        bg: 'rgba(249, 115, 22, 0.12)'
+    },
+    storage: {
+        icon: '💾',
+        label: 'Storage & DBs',
+        gradient: 'linear-gradient(135deg, #059669, #10b981)',
+        border: 'rgba(16, 185, 129, 0.5)',
+        glow: 'rgba(16, 185, 129, 0.22)',
+        bg: 'rgba(16, 185, 129, 0.12)'
+    },
+    identity: {
+        icon: '👤',
+        label: 'Identity & Secrets',
+        gradient: 'linear-gradient(135deg, #0284c7, #38bdf8)',
+        border: 'rgba(56, 189, 248, 0.5)',
+        glow: 'rgba(56, 189, 248, 0.22)',
+        bg: 'rgba(56, 189, 248, 0.12)'
+    },
+    s3: {
+        icon: '🪣',
+        label: 'S3 Object Storage',
+        gradient: 'linear-gradient(135deg, #0d9488, #2dd4bf)',
+        border: 'rgba(45, 212, 191, 0.5)',
+        glow: 'rgba(45, 212, 191, 0.22)',
+        bg: 'rgba(45, 212, 191, 0.12)'
+    },
+    organizations: {
+        icon: '🏛️',
+        label: 'Organizations',
+        gradient: 'linear-gradient(135deg, #e11d48, #fb7185)',
+        border: 'rgba(251, 113, 133, 0.5)',
+        glow: 'rgba(251, 113, 133, 0.22)',
+        bg: 'rgba(251, 113, 133, 0.12)'
+    },
+    route53: {
+        icon: '🚦',
+        label: 'Route 53 DNS',
+        gradient: 'linear-gradient(135deg, #7c3aed, #c084fc)',
+        border: 'rgba(192, 132, 252, 0.5)',
+        glow: 'rgba(192, 132, 252, 0.22)',
+        bg: 'rgba(192, 132, 252, 0.12)'
+    }
+};
+
 function renderCategoryChart() {
     const container = document.getElementById('category-chart');
+    if (!container) return;
     const counts = SUMMARY.resource_counts_by_category || {};
-    const maxCount = Math.max(...Object.values(counts), 1);
+    const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
 
     const categories = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     let html = '';
     for (const [cat, count] of categories) {
-        const pct = Math.max((count / maxCount) * 100, 3);
-        const label = cat.charAt(0).toUpperCase() + cat.slice(1);
+        const pct = ((count / total) * 100).toFixed(1);
+        const meta = CATEGORY_META[cat.toLowerCase()] || {
+            icon: '📦',
+            label: cat.charAt(0).toUpperCase() + cat.slice(1),
+            gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            border: 'rgba(99, 102, 241, 0.5)',
+            glow: 'rgba(99, 102, 241, 0.2)',
+            bg: 'rgba(99, 102, 241, 0.12)'
+        };
         html += `
-            <div class="bar-row">
-                <div class="bar-label">${label}</div>
-                <div class="bar-track">
-                    <div class="bar-fill ${cat}" style="width: ${pct}%">${count}</div>
+            <div class="category-tile"
+                 onclick="filterByCategory('${cat}')"
+                 title="Click to explore ${meta.label} (${count.toLocaleString()} assets) in Inventory"
+                 style="--tile-gradient: ${meta.gradient}; --tile-border: ${meta.border}; --tile-glow: ${meta.glow}; --tile-bg-accent: ${meta.bg};">
+                <div class="tile-top">
+                    <div class="tile-icon-box">${meta.icon}</div>
+                    <span class="tile-share">${pct}%</span>
+                </div>
+                <div class="tile-body">
+                    <div class="tile-count">${count.toLocaleString()}</div>
+                    <div class="tile-label">${meta.label}</div>
+                </div>
+                <div class="tile-bar-mini">
+                    <div class="tile-bar-mini-fill" style="width: ${Math.max(parseFloat(pct), 3)}%;"></div>
                 </div>
             </div>`;
     }
     container.innerHTML = html || '<div class="empty-state"><p>No data available</p></div>';
 }
+
+function filterByCategory(cat) {
+    const invTab = document.querySelector('.nav-tab[data-tab="inventory"]');
+    if (invTab) invTab.click();
+    const sel = document.getElementById('filter-category');
+    if (sel) {
+        let matched = false;
+        for (let i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value.toLowerCase() === cat.toLowerCase()) {
+                sel.selectedIndex = i;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            sel.value = "";
+        }
+        applyFilters();
+    }
+}
+
 renderCategoryChart();
 
 // ══════════════════════════════════════════════════════════════════
@@ -1159,6 +1520,8 @@ function initTopology(key) {
 
     if (cy) cy.destroy();
 
+    const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
+
     cy = cytoscape({
         container: document.getElementById('topology-canvas'),
         elements: elements,
@@ -1171,7 +1534,7 @@ function initTopology(key) {
                     'shape': 'data(nodeShape)',
                     'width': 'data(nodeSize)',
                     'height': 'data(nodeSize)',
-                    'color': '#e2e8f0',
+                    'color': isLightMode ? '#0f172a' : '#e2e8f0',
                     'font-size': '9px',
                     'font-family': 'Inter, sans-serif',
                     'text-valign': 'bottom',
@@ -1182,7 +1545,7 @@ function initTopology(key) {
                     'border-width': 2,
                     'border-color': 'data(nodeColor)',
                     'border-opacity': 0.5,
-                    'text-outline-color': '#0a0e1a',
+                    'text-outline-color': isLightMode ? '#ffffff' : '#0a0e1a',
                     'text-outline-width': 2,
                     'min-zoomed-font-size': 8,
                     'overlay-padding': '4px',
@@ -1191,7 +1554,7 @@ function initTopology(key) {
             {
                 selector: ':parent',
                 style: {
-                    'background-opacity': 0.1,
+                    'background-opacity': isLightMode ? 0.08 : 0.1,
                     'background-color': 'data(nodeColor)',
                     'border-width': 2,
                     'border-color': 'data(nodeColor)',
@@ -1209,14 +1572,14 @@ function initTopology(key) {
                 selector: 'edge',
                 style: {
                     'width': 1.5,
-                    'line-color': 'rgba(148, 163, 184, 0.3)',
-                    'target-arrow-color': 'rgba(148, 163, 184, 0.4)',
+                    'line-color': isLightMode ? 'rgba(100, 116, 139, 0.35)' : 'rgba(148, 163, 184, 0.3)',
+                    'target-arrow-color': isLightMode ? 'rgba(100, 116, 139, 0.45)' : 'rgba(148, 163, 184, 0.4)',
                     'target-arrow-shape': 'triangle',
                     'curve-style': 'bezier',
                     'label': 'data(label)',
                     'font-size': '7px',
-                    'color': '#64748b',
-                    'text-outline-color': '#0a0e1a',
+                    'color': isLightMode ? '#475569' : '#64748b',
+                    'text-outline-color': isLightMode ? '#ffffff' : '#0a0e1a',
                     'text-outline-width': 1.5,
                     'text-rotation': 'autorotate',
                     'min-zoomed-font-size': 10,

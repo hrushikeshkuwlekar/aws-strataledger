@@ -99,6 +99,15 @@ def _build_summary(scan_data: dict) -> dict:
         for region_data in account.get("regions", {}).values():
             count_in(region_data)
 
+        # Pre-computed metrics for summary table
+        account_summary["eks_clusters"] = account_summary["resource_counts"].get("eks_clusters", 0)
+        account_summary["subnets"] = account_summary["resource_counts"].get("subnets", 0)
+        account_summary["network_firewalls"] = account_summary["resource_counts"].get("network_firewalls", 0)
+        account_summary["waf_web_acls"] = account_summary["resource_counts"].get("waf_web_acls", 0)
+        account_summary["active_firewalls"] = (
+            account_summary["network_firewalls"] + account_summary["waf_web_acls"]
+        )
+
         summary["accounts"].append(account_summary)
 
     return summary

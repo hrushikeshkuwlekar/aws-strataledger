@@ -658,10 +658,12 @@ class NetworkingCollector(BaseCollector):
             if not fw_detail:
                 continue
             fw = fw_detail.get("Firewall", {})
+            status = fw_detail.get("FirewallStatus", {}).get("Status", "READY")
             results.append({
                 "resource_type": "network_firewall",
                 "resource_id": fw.get("FirewallArn", fw_summary.get("FirewallArn", "")),
                 "name": fw.get("FirewallName", ""),
+                "status": status,
                 "vpc_id": fw.get("VpcId"),
                 "subnet_mappings": [
                     s.get("SubnetId") for s in fw.get("SubnetMappings", [])
@@ -686,6 +688,7 @@ class NetworkingCollector(BaseCollector):
                 "resource_type": "waf_web_acl",
                 "resource_id": acl.get("ARN", acl.get("Id", "")),
                 "name": acl.get("Name", ""),
+                "status": "ACTIVE",
                 "scope": "REGIONAL",
                 "lock_token": acl.get("LockToken", ""),
                 "region": self.region,
