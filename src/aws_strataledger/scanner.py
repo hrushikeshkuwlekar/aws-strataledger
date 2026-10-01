@@ -18,6 +18,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.table import Table
 
+from . import __version__
 from .config import ScanConfig, ProfileConfig, GLOBAL_SERVICES
 from .session import SessionManager, AccountInfo
 from .topology import build_topology
@@ -31,7 +32,7 @@ from .collectors.monitoring import MonitoringCollector
 logger = logging.getLogger("aws_strataledger")
 console = Console()
 
-# Collector registry: (key, collector_class, is_global)
+# Collector registry: (key, collector_cls, is_global)
 REGIONAL_COLLECTORS = [
     ("compute", ComputeCollector),
     ("networking", NetworkingCollector),
@@ -55,7 +56,7 @@ def _run_collector(collector_cls, session, region, account_id) -> tuple[str, dic
     try:
         results = collector.collect()
     except Exception as e:
-        logger.error(f"Collector {collector_cls.__name__} crashed: {e}", exc_info=True)
+        logger.debug(f"Collector {collector_cls.__name__} crashed: {e}", exc_info=True)
         results = {}
     return (
         collector_cls.SERVICE_NAME if hasattr(collector_cls, 'SERVICE_NAME') else collector_cls.__name__,
@@ -116,7 +117,7 @@ def scan_region(session, region: str, account_id: str, service_filter: list[str]
                 all_errors.extend(errors)
                 all_warnings.extend(warnings)
             except Exception as e:
-                logger.error(f"Collector {key} failed in {region}: {e}")
+                logger.debug(f"Collector {key} failed in {region}: {e}")
                 inventory[key] = {}
 
     # Build topology
@@ -139,11 +140,11 @@ def scan_global_services(session, account_id: str, region: str, service_filter: 
             _, results, errors, warnings = _run_collector(cls, session, region, account_id)
             inventory[key] = results
             for e in errors:
-                logger.warning(e)
+                logger.debug(e)
             for w in warnings:
                 logger.debug(w)
         except Exception as e:
-            logger.error(f"Global collector {key} failed: {e}")
+            logger.debug(f"Global collector {key} failed: {e}")
             inventory[key] = {}
 
     return inventory
@@ -156,10 +157,10 @@ def run_scan(config: ScanConfig) -> dict:
     Returns the full scan result dict ready for report generation.
     """
     start_time = time.time()
-    session_mgr = SessionManager()
+    session_mgr = SessionManager(verbose=config.verbose)
 
     console.print()
-    console.print("[bold cyan]⚡ AWS StrataLedger v1.0.0[/bold cyan] — Multi-Account Inventory Scanner")
+    console.print(f"[bold cyan]⚡ AWS StrataLedger v{__version__}[/bold cyan] — Multi-Account Inventory Scanner")
     console.print()
 
     # ── Validate profiles ────────────────────────────────────────────
@@ -167,7 +168,7 @@ def run_scan(config: ScanConfig) -> dict:
     valid_profiles: list[tuple[ProfileConfig, AccountInfo]] = []
 
     for profile in config.profiles:
-        session = session_mgr.create_session(profile)
+        session = session_mgr.create_session(profile, verbose=config.verbose)
         if session:
             info = session_mgr.get_account_info(profile.profile_name)
             if info:
@@ -176,6 +177,12 @@ def run_scan(config: ScanConfig) -> dict:
     if not valid_profiles:
         console.print("[red]❌ No valid profiles. Aborting scan.[/red]")
         return {}
+
+    if not config.verbose:
+        console.print(
+            f"  [green]✅[/green] Validated {len(valid_profiles)} profile(s): "
+            f"{', '.join(p[0].profile_name for p in valid_profiles)}"
+        )
 
     console.print()
     console.print(f"[bold]🌍 Regions:[/bold] {', '.join(config.regions)}")
@@ -186,7 +193,7 @@ def run_scan(config: ScanConfig) -> dict:
     scan_result = {
         "scan_metadata": {
             "tool": "aws-strataledger",
-            "version": "1.0.0",
+            "version": __version__,
             "scan_timestamp": datetime.now(timezone.utc).isoformat(),
             "profiles_scanned": len(valid_profiles),
             "regions_scanned": len(config.regions),

@@ -31,17 +31,50 @@ from .report.generator import generate_report
 console = Console()
 
 
+def setup_logging(verbose: bool = False):
+    """
+    Configure logging levels based on verbosity flag.
+    - verbose=False: completely suppresses all logs so discovery runs cleanly without line spam.
+    - verbose=True: prints detailed debug/warning/error logs with timestamps.
+    """
+    if verbose:
+        logging.disable(logging.NOTSET)
+        level = logging.DEBUG
+        format_str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        root = logging.getLogger()
+        root.setLevel(level)
+        for h in root.handlers[:]:
+            root.removeHandler(h)
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setLevel(level)
+        handler.setFormatter(logging.Formatter(format_str, datefmt="%H:%M:%S"))
+        root.addHandler(handler)
+        for mod in ["botocore", "boto3", "urllib3", "requests", "s3transfer", "aws_strataledger"]:
+            logging.getLogger(mod).setLevel(logging.DEBUG)
+    else:
+        logging.disable(logging.CRITICAL)
+        root = logging.getLogger()
+        root.setLevel(logging.CRITICAL)
+        for h in root.handlers[:]:
+            root.removeHandler(h)
+        root.addHandler(logging.NullHandler())
+        for mod in ["botocore", "boto3", "urllib3", "requests", "s3transfer", "aws_strataledger"]:
+            logging.getLogger(mod).setLevel(logging.CRITICAL)
+
+
+# Initialize logging immediately on module import to ensure clean discovery by default
+setup_logging(False)
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="aws-strataledger")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose/debug logging")
-def main(verbose):
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable verbose/debug logging during discovery")
+@click.pass_context
+def main(ctx, verbose):
     """⚡ AWS StrataLedger — Multi-Account Inventory & Topology Discovery Tool"""
-    level = logging.DEBUG if verbose else logging.WARNING
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    ctx.ensure_object(dict)
+    ctx.obj["verbose"] = verbose
+    setup_logging(verbose)
 
 
 @main.command()
@@ -65,8 +98,18 @@ def main(verbose):
     default="./reports",
     help="Output directory for scan data and reports. Default: ./reports",
 )
-def scan(profiles, regions, services, output):
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    default=False,
+    help="Enable verbose/debug logging during discovery",
+)
+@click.pass_context
+def scan(ctx, profiles, regions, services, output, verbose):
     """Run a multi-account, multi-region inventory scan."""
+    is_verbose = verbose or (ctx.obj and ctx.obj.get("verbose", False))
+    setup_logging(is_verbose)
+
     resolved_profiles = resolve_profiles(profiles)
     if not resolved_profiles:
         console.print("[red]❌ No valid profiles to scan. Aborting.[/red]")
@@ -84,6 +127,7 @@ def scan(profiles, regions, services, output):
         regions=resolved_regions,
         services=resolved_services,
         output_dir=output,
+        verbose=is_verbose,
     )
 
     # Run scan

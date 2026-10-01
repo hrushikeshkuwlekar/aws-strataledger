@@ -57,6 +57,7 @@ class ScanConfig:
     output_dir: str = "./reports"
     max_workers_regions: int = 5
     max_workers_services: int = 10
+    verbose: bool = False
 
 
 def get_aws_config_path() -> Path:

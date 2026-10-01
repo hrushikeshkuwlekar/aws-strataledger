@@ -31,17 +31,20 @@ class AccountInfo:
 class SessionManager:
     """Manages boto3 sessions for SSO profiles."""
 
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
+        self.verbose = verbose
         self._sessions: dict[str, boto3.Session] = {}
         self._account_info: dict[str, AccountInfo] = {}
 
-    def create_session(self, profile: ProfileConfig) -> boto3.Session | None:
+    def create_session(self, profile: ProfileConfig, verbose: bool | None = None) -> boto3.Session | None:
         """
         Create a boto3 session for the given profile.
         Returns None if the SSO token is invalid/expired.
         """
         if profile.profile_name in self._sessions:
             return self._sessions[profile.profile_name]
+
+        show_output = self.verbose if verbose is None else verbose
 
         try:
             session = boto3.Session(profile_name=profile.profile_name)
@@ -70,10 +73,11 @@ class SessionManager:
                 caller_arn=caller_arn,
             )
 
-            console.print(
-                f"  [green]✅[/green] Profile [bold]{profile.profile_name}[/bold] → "
-                f"Account [cyan]{account_id}[/cyan] ({account_alias})"
-            )
+            if show_output:
+                console.print(
+                    f"  [green]✅[/green] Profile [bold]{profile.profile_name}[/bold] → "
+                    f"Account [cyan]{account_id}[/cyan] ({account_alias})"
+                )
             return session
 
         except botocore.exceptions.UnauthorizedSSOTokenError:

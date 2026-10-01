@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-10-02
+
+### 🔇 Quiet Discovery by Default & Verbose-Only Logging Control
+- **Silent Discovery Output**: Completely eliminated console line spam during active AWS discovery.
+  - Enabled global `logging.disable(logging.CRITICAL)` by default, completely silencing client errors (`AccessDeniedException`, `UnauthorizedOperation`, unsupported regional endpoints) and framework logging from `botocore`, `boto3`, `urllib3`, and `requests`.
+  - Replaced `logger.warning` / `logger.error` in base collectors and scanner with `logger.debug`, ensuring unexpected or expected service errors are stored in collector metadata and never break the Rich progress bar.
+- **Dedicated `--verbose` / `-v` Flag**:
+  - Full discovery logs, debug messages, and detailed timestamps (`%(asctime)s [%(levelname)s] ...`) are only printed to stderr when `--verbose` (or `-v`) is explicitly passed to `aws-strataledger` or `aws-strataledger scan`.
+- **Clean Profile Validation Summary**:
+  - Consolidated multi-profile validation into a single concise line (e.g., `✔ Validated 4 profile(s): dev, staging, prod, sand`) when running without `--verbose`, avoiding terminal line scrolling.
+  - Preserved critical SSO token expiration warnings (`aws sso login --profile ...`) so users are immediately alerted if authentication is required.
+- **Dynamic Package Versioning**: Bound CLI banners and scan metadata outputs directly to `aws_strataledger.__version__`.
+
 ## [1.0.2] - 2026-10-02
 
 ### 🛡️ AWS Network Firewall Detection Algorithm Verification & Hardening

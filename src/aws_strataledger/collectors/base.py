@@ -126,7 +126,7 @@ class BaseCollector(ABC):
                     self._errors.append(
                         f"[{self.SERVICE_NAME}] ClientError ({error_code}): {error_msg}"
                     )
-                    logger.warning(
+                    logger.debug(
                         f"ClientError in {self.SERVICE_NAME}/{self.region}: "
                         f"{error_code} - {error_msg}"
                     )
@@ -146,7 +146,7 @@ class BaseCollector(ABC):
                 self._errors.append(
                     f"[{self.SERVICE_NAME}] Unexpected error: {type(e).__name__}: {e}"
                 )
-                logger.warning(
+                logger.debug(
                     f"Unexpected error in {self.SERVICE_NAME}/{self.region}: {e}",
                     exc_info=True,
                 )

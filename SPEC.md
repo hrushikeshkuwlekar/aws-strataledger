@@ -1,6 +1,6 @@
 # 🛰️ AWS StrataLedger — Engineering Specification
 
-**Version:** 1.0.2  
+**Version:** 1.0.3  
 **Product Name:** AWS StrataLedger (`aws-strataledger`)  
 **Package:** `src/aws_strataledger`  
 **License:** MIT  
@@ -17,6 +17,7 @@
 3. **AWS Reference Architecture Topology**: Generates deterministic, tiered architectural landscapes utilizing official AWS vector SVG icons and 90-degree orthogonal CAD-style routing—completely eliminating messy force-directed spiderwebs.
 4. **Single-File Self-Contained Deliverable**: Produces standalone, air-gapped HTML reports containing all embedded assets (SVG icons, Cytoscape.js engine, responsive styles, and scan datasets) with zero runtime server requirements.
 5. **Fault-Tolerant Concurrency**: Parallel execution across accounts and regions using `ThreadPoolExecutor`, comprehensive API pagination, and individual collector error isolation.
+6. **Quiet Discovery by Default**: Zero terminal line spam during discovery. All client warnings and botocore messages are completely disabled via `logging.disable(logging.CRITICAL)` by default so progress bars render cleanly; detailed logs are only printed when `--verbose` (`-v`) is explicitly passed.
 
 ---
 
