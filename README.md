@@ -1,6 +1,6 @@
 # ⚡ AWS StrataLedger
 
-[![Version: 1.1.0](https://img.shields.io/badge/version-1.1.0-emerald.svg)](https://github.com/hrushikeshkuwlekar/aws-strataledger)
+[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-emerald.svg)](https://github.com/hrushikeshkuwlekar/aws-strataledger)
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AWS SSO](https://img.shields.io/badge/AWS-SSO%20Native-orange.svg)](https://aws.amazon.com/iam/identity-center/)
@@ -88,9 +88,9 @@ pipx install git+https://github.com/hrushikeshkuwlekar/aws-strataledger.git
 
 ---
 
-## 🔄 Upgrading from an Earlier Version
+## 🔄 Updating / Installing the Latest Version
 
-If you already have `aws-strataledger` installed, upgrade to the latest version (**v1.1.0**) using the command corresponding to your installation method:
+If you already have `aws-strataledger` installed, update to the latest codebase (**v1.0.0**) using the command corresponding to your installation method:
 
 ### 1. Upgrade Pip / Git Installation
 ```bash
