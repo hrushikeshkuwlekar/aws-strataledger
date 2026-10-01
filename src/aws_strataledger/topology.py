@@ -1,266 +1,399 @@
 """
-Topology graph builder.
+AWS Architecture Landscape & Topology Builder.
 
-Builds a node/edge graph from inventory data for visualization
-in the interactive topology diagram (Cytoscape.js).
+Transforms multi-account cloud inventory into an authentic, structured
+AWS Architecture Diagram graph with proper tiered flow (Ingress -> Public -> App -> Data)
+and eliminates noisy route table spiderwebs.
 """
+
+from typing import Dict, Any, List, Set
 
 
 def build_topology(inventory: dict) -> dict:
     """
-    Build a topology graph from a single account-region inventory.
+    Build an AWS Architecture Landscape graph from an account-region inventory.
 
     Args:
-        inventory: Dict with keys like 'compute', 'networking', 'storage', etc.
+        inventory: Dict with keys 'networking', 'compute', 'storage', 'identity', 'security', 'monitoring', 's3'
 
     Returns:
         {"nodes": [...], "edges": [...]}
     """
-    nodes = []
-    edges = []
-    node_ids = set()
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+    node_ids: Set[str] = set()
+    edge_pairs: Set[tuple] = set()
 
-    def add_node(node_id: str, node_type: str, label: str, parent: str = None, data: dict = None):
+    def add_node(node_id: str, node_type: str, label: str, parent: str = None, data: dict = None, tier: str = "app"):
         if node_id in node_ids:
             return
         node_ids.add(node_id)
-        node = {
+        nodes.append({
             "id": node_id,
             "type": node_type,
             "label": label,
             "parent": parent,
+            "tier": tier,
             "data": data or {},
-        }
-        nodes.append(node)
+        })
 
     def add_edge(source: str, target: str, label: str = "", edge_type: str = "default"):
-        if source not in node_ids or target not in node_ids:
+        if source not in node_ids or target not in node_ids or source == target:
             return
+        pair = (source, target, edge_type)
+        if pair in edge_pairs:
+            return
+        edge_pairs.add(pair)
         edges.append({
             "source": source,
             "target": target,
             "label": label,
             "type": edge_type,
+            "edgeType": edge_type,
         })
 
     networking = inventory.get("networking", {})
     compute = inventory.get("compute", {})
     storage = inventory.get("storage", {})
+    identity = inventory.get("identity", {})
+    security = inventory.get("security", {})
+    monitoring = inventory.get("monitoring", {})
+    s3_data = inventory.get("s3", {})
 
-    # ── VPCs ─────────────────────────────────────────────────────────
+    # ── 1. Route Table Analysis: Classify Subnet Tiers ────────────────
+    # Instead of creating messy route table nodes with 50+ diagonal lines,
+    # we inspect route tables to classify subnets into architectural tiers:
+    # - "public": Has default route to an Internet Gateway
+    # - "app": Has default route to a NAT Gateway or VPC peering/TGW
+    # - "db": Isolated subnet with only local routes
+    public_subnets = set()
+    nat_subnets = set()
+    subnet_to_nat = {}
+
+    route_tables = networking.get("route_tables", [])
+    for rt in route_tables:
+        routes = rt.get("routes", [])
+        has_igw = any(r.get("target", "").startswith("igw-") for r in routes)
+        nat_target = next((r.get("target") for r in routes if r.get("target", "").startswith("nat-")), None)
+
+        for assoc in rt.get("associations", []):
+            sub_id = assoc.get("subnet_id")
+            if sub_id:
+                if has_igw:
+                    public_subnets.add(sub_id)
+                elif nat_target:
+                    nat_subnets.add(sub_id)
+                    subnet_to_nat[sub_id] = nat_target
+
+    # ── 2. VPC Network Enclosures ─────────────────────────────────────
     vpcs = networking.get("vpcs", [])
     for vpc in vpcs:
         vpc_id = vpc["resource_id"]
-        vpc_label = f"{vpc_id}"
-        if vpc.get("cidr_block"):
-            vpc_label += f"\n{vpc['cidr_block']}"
-        if vpc.get("name"):
-            vpc_label = f"{vpc['name']}\n{vpc_label}"
-        add_node(vpc_id, "vpc", vpc_label, data=vpc)
+        name = vpc.get("name") or vpc_id
+        cidr = vpc.get("cidr_block", "")
+        label = f"{name}\n{cidr}" if cidr and cidr != name else name
+        add_node(vpc_id, "vpc", label, data=vpc, tier="vpc")
 
-    # ── Subnets ──────────────────────────────────────────────────────
+    # ── 3. Subnets with Architecture Tiers ────────────────────────────
     subnets = networking.get("subnets", [])
     for subnet in subnets:
         subnet_id = subnet["resource_id"]
         vpc_id = subnet.get("vpc_id")
-        is_public = subnet.get("map_public_ip_on_launch", False)
-        subnet_type = "subnet_public" if is_public else "subnet_private"
-        label = subnet_id
-        if subnet.get("name"):
-            label = subnet["name"]
-        if subnet.get("cidr_block"):
-            label += f"\n{subnet['cidr_block']}"
-        if subnet.get("availability_zone"):
-            label += f"\n{subnet['availability_zone']}"
-        add_node(subnet_id, subnet_type, label, parent=vpc_id, data=subnet)
+        name = subnet.get("name") or subnet_id
+        cidr = subnet.get("cidr_block", "")
+        az = subnet.get("availability_zone", "")
 
-    # ── Internet Gateways ────────────────────────────────────────────
+        name_lower = (name or "").lower()
+        if "pub" in name_lower or subnet_id in public_subnets or subnet.get("map_public_ip_on_launch", False):
+            tier = "public"
+            subnet_type = "subnet_public"
+            tier_title = "Public Subnet"
+        elif "db" in name_lower or "data" in name_lower or "rds" in name_lower or "sql" in name_lower:
+            tier = "db"
+            subnet_type = "subnet_private"
+            tier_title = "Private DB Subnet"
+        elif subnet_id in nat_subnets or "app" in name_lower or "priv" in name_lower or "compute" in name_lower:
+            tier = "app"
+            subnet_type = "subnet_private"
+            tier_title = "Private App Subnet"
+        else:
+            tier = "app"
+            subnet_type = "subnet_private"
+            tier_title = "Private Subnet"
+
+        label = f"[{tier_title}] {name}\n{cidr} • {az}" if cidr else f"[{tier_title}] {name}"
+        add_node(subnet_id, subnet_type, label, parent=vpc_id, data=subnet, tier=tier)
+
+    # ── 4. Edge, Perimeter & Ingress Gateways ────────────────────────
+    # Internet Gateways (IGW)
     igws = networking.get("internet_gateways", [])
     for igw in igws:
         igw_id = igw["resource_id"]
         label = igw.get("name") or igw_id
-        add_node(igw_id, "internet_gateway", label, data=igw)
+        add_node(igw_id, "internet_gateway", label, data=igw, tier="ingress")
         for att in igw.get("attachments", []):
             vpc_id = att.get("vpc_id")
             if vpc_id:
-                add_edge(igw_id, vpc_id, "attached", "gateway")
+                add_edge(igw_id, vpc_id, "Internet Ingress", "gateway")
 
-    # ── NAT Gateways ─────────────────────────────────────────────────
-    nats = networking.get("nat_gateways", [])
-    for nat in nats:
-        nat_id = nat["resource_id"]
-        label = nat.get("name") or nat_id
-        subnet_id = nat.get("subnet_id")
-        add_node(nat_id, "nat_gateway", label, parent=subnet_id, data=nat)
-
-    # ── VPN Gateways ─────────────────────────────────────────────────
-    vgws = networking.get("vpn_gateways", [])
-    for vgw in vgws:
-        vgw_id = vgw["resource_id"]
-        label = vgw.get("name") or vgw_id
-        add_node(vgw_id, "vpn_gateway", label, data=vgw)
-        for att in vgw.get("vpc_attachments", []):
-            vpc_id = att.get("vpc_id")
-            if vpc_id:
-                add_edge(vgw_id, vpc_id, "attached", "gateway")
-
-    # ── Transit Gateways ─────────────────────────────────────────────
+    # AWS Transit Gateways (TGW) - Central Hub
     tgws = networking.get("transit_gateways", [])
     for tgw in tgws:
         tgw_id = tgw["resource_id"]
         label = tgw.get("name") or tgw_id
-        add_node(tgw_id, "transit_gateway", label, data=tgw)
+        add_node(tgw_id, "transit_gateway", label, data=tgw, tier="ingress")
 
     tgw_attachments = networking.get("transit_gateway_attachments", [])
     for att in tgw_attachments:
         tgw_id = att.get("transit_gateway_id")
         resource_id = att.get("resource_id_attached")
+        att_type = att.get("resource_type_attached", "vpc")
         if tgw_id and resource_id:
-            add_edge(resource_id, tgw_id, att.get("resource_type_attached", ""), "tgw_attachment")
+            add_edge(tgw_id, resource_id, f"TGW Attachment ({att_type})", "tgw_attachment")
 
-    # ── VPC Peering ──────────────────────────────────────────────────
+    # VPC Peering Connections
     peerings = networking.get("vpc_peering_connections", [])
     for pcx in peerings:
         req_vpc = pcx.get("requester_vpc")
         acc_vpc = pcx.get("accepter_vpc")
         pcx_id = pcx["resource_id"]
-        if req_vpc and acc_vpc:
-            # Add peering as a node between the two VPCs
-            add_node(pcx_id, "peering", pcx_id, data=pcx)
-            add_edge(req_vpc, pcx_id, "requester", "peering")
-            add_edge(pcx_id, acc_vpc, "accepter", "peering")
+        name = pcx.get("name") or pcx_id
+        if req_vpc and acc_vpc and req_vpc in node_ids and acc_vpc in node_ids:
+            add_edge(req_vpc, acc_vpc, f"VPC Peering: {name}", "peering")
 
-    # ── VPC Endpoints ────────────────────────────────────────────────
-    endpoints = networking.get("vpc_endpoints", [])
-    for ep in endpoints:
-        ep_id = ep["resource_id"]
-        vpc_id = ep.get("vpc_id")
-        service = ep.get("service_name", "").split(".")[-1]
-        add_node(ep_id, "vpc_endpoint", service, parent=vpc_id, data=ep)
+    # VPN Gateways
+    vgws = networking.get("vpn_gateways", [])
+    for vgw in vgws:
+        vgw_id = vgw["resource_id"]
+        label = vgw.get("name") or vgw_id
+        add_node(vgw_id, "vpn_gateway", label, data=vgw, tier="ingress")
+        for att in vgw.get("vpc_attachments", []):
+            vpc_id = att.get("vpc_id")
+            if vpc_id:
+                add_edge(vgw_id, vpc_id, "Site-to-Site VPN", "gateway")
 
-    # ── Route Tables → Gateway edges ────────────────────────────────
-    route_tables = networking.get("route_tables", [])
-    for rt in route_tables:
-        rt_id = rt["resource_id"]
-        vpc_id = rt.get("vpc_id")
-        add_node(rt_id, "route_table", rt.get("name") or rt_id, parent=vpc_id, data=rt)
+    # AWS Network Firewalls
+    firewalls = networking.get("network_firewalls", [])
+    for fw in firewalls:
+        fw_id = fw.get("name", fw["resource_id"])
+        vpc_id = fw.get("vpc_id")
+        add_node(fw_id, "network_firewall", f"Firewall: {fw_id}", parent=vpc_id, data=fw, tier="ingress")
 
-        # Connect route table to associated subnets
-        for assoc in rt.get("associations", []):
-            subnet_id = assoc.get("subnet_id")
-            if subnet_id:
-                add_edge(subnet_id, rt_id, "routes via", "routing")
+    # AWS WAF Web ACLs
+    waf_acls = networking.get("waf_web_acls", [])
+    for acl in waf_acls:
+        acl_id = acl.get("resource_id", acl.get("name"))
+        acl_name = acl.get("name", acl_id)
+        add_node(acl_id, "waf_web_acl", f"WAF: {acl_name}", data=acl, tier="ingress")
 
-        # Connect route table to targets
-        for route in rt.get("routes", []):
-            target = route.get("target", "")
-            dest = route.get("destination", "")
-            if target == "local" or not target:
-                continue
-            if target in node_ids:
-                add_edge(rt_id, target, dest, "routing")
+    # ── 5. NAT Gateways (Public Tier Egress) ──────────────────────────
+    nats = networking.get("nat_gateways", [])
+    for nat in nats:
+        nat_id = nat["resource_id"]
+        label = nat.get("name") or nat_id
+        subnet_id = nat.get("subnet_id")
+        add_node(nat_id, "nat_gateway", f"NAT: {label}", parent=subnet_id, data=nat, tier="public")
+        # Connect NAT to IGW
+        for igw in igws:
+            add_edge(nat_id, igw["resource_id"], "Outbound", "egress")
 
-    # ── EC2 Instances ────────────────────────────────────────────────
-    instances = compute.get("ec2_instances", [])
-    for inst in instances:
-        inst_id = inst["resource_id"]
-        subnet_id = inst.get("subnet_id")
-        label = inst.get("name") or inst_id
-        label += f"\n{inst.get('instance_type', '')}"
-        add_node(inst_id, "ec2", label, parent=subnet_id, data=inst)
+    # Connect Private App subnets to their respective NAT Gateway
+    for sub_id, nat_id in subnet_to_nat.items():
+        if sub_id in node_ids and nat_id in node_ids:
+            add_edge(sub_id, nat_id, "Outbound NAT", "egress")
 
-    # ── EKS Clusters ─────────────────────────────────────────────────
-    eks_clusters = compute.get("eks_clusters", [])
-    for cluster in eks_clusters:
-        cluster_id = cluster.get("name", cluster["resource_id"])
-        vpc_id = cluster.get("vpc_id")
-        label = f"EKS: {cluster_id}\nv{cluster.get('version', '')}"
-        add_node(cluster_id, "eks_cluster", label, parent=vpc_id, data=cluster)
-
-    # ── Load Balancers ───────────────────────────────────────────────
+    # ── 6. Load Balancers (ALB / NLB) ────────────────────────────────
     lbs = networking.get("load_balancers_v2", [])
     for lb in lbs:
         lb_id = lb.get("name", lb["resource_id"])
         vpc_id = lb.get("vpc_id")
+        scheme = lb.get("scheme", "internet-facing")
         lb_type = (lb.get("type") or "application").upper()[:3]
-        label = f"{lb_type}: {lb_id}"
-        add_node(lb_id, "load_balancer", label, parent=vpc_id, data=lb)
+        label = f"{lb_type}: {lb_id}\n({scheme})"
+        tier = "public" if "internet" in scheme else "app"
 
-        # Connect to subnets
-        for az in lb.get("availability_zones", []):
-            subnet_id = az.get("subnet_id")
-            if subnet_id and subnet_id in node_ids:
-                add_edge(lb_id, subnet_id, "in subnet", "lb_subnet")
+        # Place inside first associated subnet or VPC
+        target_parent = vpc_id
+        az_subnets = [az.get("subnet_id") for az in lb.get("availability_zones", []) if az.get("subnet_id")]
+        if az_subnets and az_subnets[0] in node_ids:
+            target_parent = az_subnets[0]
 
-    # Connect target groups to load balancers and instances
+        add_node(lb_id, "load_balancer", label, parent=target_parent, data=lb, tier=tier)
+
+        # If internet-facing, connect from IGW
+        if "internet" in scheme and igws:
+            add_edge(igws[0]["resource_id"], lb_id, "HTTP/HTTPS", "traffic")
+
+    # ── 7. Compute Tier (EC2, EKS, ASG, Lambda) ──────────────────────
+    # EC2 Instances
+    instances = compute.get("ec2_instances", [])
+    inst_by_id = {}
+    for inst in instances:
+        inst_id = inst["resource_id"]
+        inst_by_id[inst_id] = inst
+        subnet_id = inst.get("subnet_id")
+        name = inst.get("name") or inst_id
+        itype = inst.get("instance_type", "")
+        state = inst.get("state", "running")
+        label = f"{name}\n{itype} • {state}"
+
+        is_sub_public = subnet_id in public_subnets
+        tier = "public" if is_sub_public else "app"
+        add_node(inst_id, "ec2", label, parent=subnet_id, data=inst, tier=tier)
+
+    # Auto Scaling Groups
+    asgs = compute.get("auto_scaling_groups", [])
+    for asg in asgs:
+        asg_name = asg.get("name", asg["resource_id"])
+        vpc_subnets = asg.get("vpc_zone_identifier", "").split(",")
+        parent = vpc_subnets[0] if vpc_subnets and vpc_subnets[0] in node_ids else None
+        asg_label = f"ASG: {asg_name}\n({asg.get('desired_capacity', 0)} instances)"
+        add_node(asg_name, "auto_scaling_group", asg_label, parent=parent, data=asg, tier="app")
+
+    # EKS Clusters
+    eks_clusters = compute.get("eks_clusters", [])
+    for cluster in eks_clusters:
+        cluster_name = cluster.get("name", cluster["resource_id"])
+        vpc_id = cluster.get("vpc_id")
+        version = cluster.get("version", "")
+        status = cluster.get("status", "ACTIVE")
+        label = f"EKS: {cluster_name}\nK8s v{version} • {status}"
+        add_node(cluster_name, "eks_cluster", label, parent=vpc_id, data=cluster, tier="app")
+
+        # Connect EKS to cluster subnets
+        for sub_id in cluster.get("subnet_ids", []):
+            if sub_id in node_ids:
+                add_edge(cluster_name, sub_id, "Cluster Subnet", "traffic")
+
+    # Connect Load Balancers to Target Instances
     target_groups = networking.get("target_groups", [])
-    # Build instance-to-subnet map for reference
-    instance_ids = {i["resource_id"] for i in instances}
-
     for tg in target_groups:
         for lb_arn in tg.get("load_balancer_arns", []):
-            # Find LB by ARN
-            lb_name = None
-            for lb in lbs:
-                if lb["resource_id"] == lb_arn:
-                    lb_name = lb.get("name", lb["resource_id"])
-                    break
-            if lb_name and lb_name in node_ids:
-                # We don't add target group as a separate node, but we could
-                pass
+            matching_lb = next((l.get("name") for l in lbs if l["resource_id"] == lb_arn), None)
+            if matching_lb and matching_lb in node_ids:
+                for inst_id in inst_by_id:
+                    # Link ALB to compute instances in the same VPC
+                    inst_vpc = inst_by_id[inst_id].get("vpc_id")
+                    lb_vpc = next((l.get("vpc_id") for l in lbs if l.get("name") == matching_lb), None)
+                    if inst_vpc and lb_vpc and inst_vpc == lb_vpc:
+                        add_edge(matching_lb, inst_id, "Target", "traffic")
+                        break
 
-    # ── RDS Instances ────────────────────────────────────────────────
+    # VPC Lambda Functions
+    functions = compute.get("lambda_functions", [])
+    for fn in functions:
+        fn_name = fn.get("name", fn["resource_id"])
+        vpc_config = fn.get("vpc_config", {})
+        vpc_id = vpc_config.get("VpcId")
+        runtime = fn.get("runtime", "")
+        label = f"λ: {fn_name}\n{runtime}"
+
+        if vpc_id and vpc_id in node_ids:
+            fn_subnets = vpc_config.get("SubnetIds", [])
+            parent = fn_subnets[0] if fn_subnets and fn_subnets[0] in node_ids else vpc_id
+            add_node(fn_name, "lambda", label, parent=parent, data=fn, tier="app")
+        else:
+            # Non-VPC Lambda in regional tier
+            add_node(fn_name, "lambda", label, data=fn, tier="regional")
+
+    # VPC Endpoints
+    endpoints = networking.get("vpc_endpoints", [])
+    for ep in endpoints:
+        ep_id = ep["resource_id"]
+        vpc_id = ep.get("vpc_id")
+        svc_name = ep.get("service_name", "").split(".")[-1]
+        label = f"Endpoint: {svc_name}"
+        add_node(ep_id, "vpc_endpoint", label, parent=vpc_id, data=ep, tier="app")
+
+    # ── 8. Database & Storage Tier (RDS, Aurora, DynamoDB, EFS) ───────
+    # Aurora DB Clusters
+    rds_clusters = storage.get("rds_clusters", [])
+    for cluster in rds_clusters:
+        cluster_id = cluster.get("name", cluster["resource_id"])
+        engine = cluster.get("engine", "")
+        status = cluster.get("status", "available")
+        target_parent = vpc_id
+        db_named_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and (
+            "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
+        )]
+        if db_named_subnets and db_named_subnets[0] in node_ids:
+            target_parent = db_named_subnets[0]
+        add_node(cluster_id, "rds_cluster", label, parent=target_parent, data=cluster, tier="db")
+
+    # RDS Instances
     rds_instances = storage.get("rds_instances", [])
     for db in rds_instances:
         db_id = db.get("name", db["resource_id"])
         vpc_id = db.get("vpc_id")
         engine = db.get("engine", "")
-        label = f"RDS: {db_id}\n{engine}"
-        add_node(db_id, "rds", label, parent=vpc_id, data=db)
+        status = db.get("status", "available")
+        label = f"RDS: {db_id}\n{engine} • {status}"
 
-    # ── RDS Clusters ─────────────────────────────────────────────────
-    rds_clusters = storage.get("rds_clusters", [])
-    for cluster in rds_clusters:
-        cluster_id = cluster.get("name", cluster["resource_id"])
-        engine = cluster.get("engine", "")
-        label = f"Aurora: {cluster_id}\n{engine}"
-        # Don't set parent to avoid conflict with member instances
-        add_node(cluster_id, "rds_cluster", label, data=cluster)
-
-        # Connect members
-        for member in cluster.get("members", []):
-            member_id = member.get("instance_id")
-            if member_id and member_id in node_ids:
-                role = "writer" if member.get("is_writer") else "reader"
-                add_edge(cluster_id, member_id, role, "cluster_member")
-
-    # ── Lambda Functions (VPC-connected) ─────────────────────────────
-    functions = compute.get("lambda_functions", [])
-    for fn in functions:
-        vpc_config = fn.get("vpc_config", {})
-        vpc_id = vpc_config.get("VpcId")
-        fn_name = fn.get("name", fn["resource_id"])
-        label = f"λ: {fn_name}"
-        if vpc_id:
-            add_node(fn_name, "lambda", label, parent=vpc_id, data=fn)
-        # Non-VPC lambdas are shown but floating
+        # Place inside DB subnet if available, otherwise fallback to private subnet or VPC
+        target_parent = vpc_id
+        db_named_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and (
+            "db" in (s.get("name") or "").lower() or "data" in (s.get("name") or "").lower() or "rds" in (s.get("name") or "").lower()
+        )]
+        if db_named_subnets and db_named_subnets[0] in node_ids:
+            target_parent = db_named_subnets[0]
         else:
-            add_node(fn_name, "lambda", label, data=fn)
+            priv_subnets = [s["resource_id"] for s in subnets if s.get("vpc_id") == vpc_id and s["resource_id"] not in public_subnets]
+            if priv_subnets and priv_subnets[0] in node_ids:
+                target_parent = priv_subnets[0]
 
-    # ── S3 Buckets (peripheral) ──────────────────────────────────────
-    s3_buckets = inventory.get("s3", {}).get("s3_buckets", [])
-    for bucket in s3_buckets:
-        bucket_name = bucket["resource_id"]
-        label = f"S3: {bucket_name}"
-        add_node(bucket_name, "s3_bucket", label, data=bucket)
+        add_node(db_id, "rds_instance", label, parent=target_parent, data=db, tier="db")
 
-    # ── Security Groups (as metadata, not separate nodes to avoid clutter) ──
+        # Connect instances to Aurora cluster if member
+        for cluster in rds_clusters:
+            for member in cluster.get("members", []):
+                if member.get("instance_id") == db_id:
+                    role = "Writer" if member.get("is_writer") else "Reader"
+                    add_edge(cluster.get("name"), db_id, role, "database")
 
-    # ── Network Firewalls ────────────────────────────────────────────
-    firewalls = networking.get("network_firewalls", [])
-    for fw in firewalls:
-        fw_id = fw.get("name", fw["resource_id"])
-        vpc_id = fw.get("vpc_id")
-        add_node(fw_id, "network_firewall", f"NFW: {fw_id}", parent=vpc_id, data=fw)
+        # Connect app instances to database in same VPC
+        if vpc_id:
+            for inst_id, inst in inst_by_id.items():
+                if inst.get("vpc_id") == vpc_id:
+                    add_edge(inst_id, db_id, "SQL Access", "database")
+                    break
+
+    # EFS File Systems
+    efs_filesystems = storage.get("efs_file_systems", [])
+    for efs in efs_filesystems:
+        efs_id = efs.get("name") or efs["resource_id"]
+        label = f"EFS: {efs_id}"
+        add_node(efs_id, "efs_file_system", label, data=efs, tier="db")
+
+    # ── 9. AWS Regional & Managed Services ────────────────────────────
+    # Amazon S3 Buckets
+    s3_buckets = s3_data.get("s3_buckets", []) or inventory.get("s3_buckets", [])
+    for bucket in s3_buckets[:15]:  # show up to 15 key buckets
+        b_name = bucket.get("name") or bucket["resource_id"]
+        add_node(b_name, "s3_bucket", f"S3: {b_name}", data=bucket, tier="regional")
+
+    # DynamoDB Tables
+    dynamo_tables = storage.get("dynamodb_tables", [])
+    for table in dynamo_tables[:10]:
+        t_name = table.get("name") or table["resource_id"]
+        add_node(t_name, "dynamodb_table", f"DynamoDB: {t_name}", data=table, tier="regional")
+
+    # KMS Keys (Customer Managed)
+    kms_keys = identity.get("kms_keys", [])
+    for key in kms_keys[:6]:
+        key_id = key.get("alias") or key.get("key_id") or key["resource_id"]
+        add_node(key_id, "kms_key", f"KMS: {key_id}", data=key, tier="regional")
+
+    # Secrets Manager
+    secrets = identity.get("secrets", [])
+    for sec in secrets[:6]:
+        sec_name = sec.get("name") or sec["resource_id"]
+        add_node(sec_name, "secrets_manager", f"Secret: {sec_name}", data=sec, tier="regional")
+
+    # CloudWatch Alarms
+    alarms = monitoring.get("cloudwatch_alarms", [])
+    for alm in alarms[:6]:
+        alm_name = alm.get("name") or alm["resource_id"]
+        state = alm.get("state", "OK")
+        add_node(alm_name, "cloudwatch_alarm", f"Alarm: {alm_name} ({state})", data=alm, tier="regional")
 
     return {"nodes": nodes, "edges": edges}
