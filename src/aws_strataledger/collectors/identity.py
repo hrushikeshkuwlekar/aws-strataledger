@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 """
 Identity, Secrets, & Encryption collectors.
 
-Covers: IAM (Users, Roles, Policies, Groups, Access Analyzer),
-        IAM Identity Center, KMS, CloudHSM, Secrets Manager,
-        SSM Parameter Store, ACM
+Covers: IAM (Users, Roles, Policies, Groups) — global;
+        Access Analyzer, KMS, CloudHSM, Secrets Manager,
+        SSM Parameter Store, ACM — regional
 """
 
+from collections import defaultdict
+
 from .base import BaseCollector
+
+ACCESS_ANALYZER_FINDINGS_CAP = 1000
 
 
 class IAMCollector(BaseCollector):
@@ -22,49 +28,23 @@ class IAMCollector(BaseCollector):
         results["iam_roles"] = self._collect_roles()
         results["iam_policies"] = self._collect_policies()
         results["iam_groups"] = self._collect_groups()
-        results["iam_access_analyzers"] = self._collect_access_analyzers()
         return results
 
     def _collect_users(self) -> list[dict]:
         iam = self._get_client("iam")
         users = self._safe_paginate(iam, "list_users", "Users")
-        results = []
-        for user in users:
+
+        def describe(user: dict) -> dict:
             username = user["UserName"]
-
-            # MFA devices
-            mfa_devices = self._safe_call(
-                lambda u=username: iam.list_mfa_devices(UserName=u).get(
-                    "MFADevices", []
-                ),
-                default=[],
+            mfa_devices = self._safe_paginate(iam, "list_mfa_devices", "MFADevices", UserName=username)
+            access_keys = self._safe_paginate(
+                iam, "list_access_keys", "AccessKeyMetadata", UserName=username
             )
-
-            # Access keys
-            access_keys = self._safe_call(
-                lambda u=username: iam.list_access_keys(UserName=u).get(
-                    "AccessKeyMetadata", []
-                ),
-                default=[],
+            attached = self._safe_paginate(
+                iam, "list_attached_user_policies", "AttachedPolicies", UserName=username
             )
-
-            # Attached policies
-            attached = self._safe_call(
-                lambda u=username: iam.list_attached_user_policies(UserName=u).get(
-                    "AttachedPolicies", []
-                ),
-                default=[],
-            )
-
-            # Groups
-            groups = self._safe_call(
-                lambda u=username: iam.list_groups_for_user(UserName=u).get(
-                    "Groups", []
-                ),
-                default=[],
-            )
-
-            results.append({
+            groups = self._safe_paginate(iam, "list_groups_for_user", "Groups", UserName=username)
+            return {
                 "resource_type": "iam_user",
                 "resource_id": user.get("Arn", username),
                 "name": username,
@@ -72,25 +52,25 @@ class IAMCollector(BaseCollector):
                 "arn": user.get("Arn"),
                 "create_date": str(user.get("CreateDate", "")),
                 "password_last_used": str(user.get("PasswordLastUsed", "")),
-                "mfa_enabled": len(mfa_devices or []) > 0,
-                "mfa_device_count": len(mfa_devices or []),
+                "mfa_enabled": len(mfa_devices) > 0,
+                "mfa_device_count": len(mfa_devices),
                 "access_keys": [
                     {
                         "key_id": k.get("AccessKeyId"),
                         "status": k.get("Status"),
                         "create_date": str(k.get("CreateDate", "")),
                     }
-                    for k in (access_keys or [])
+                    for k in access_keys
                 ],
-                "attached_policies": [
-                    p.get("PolicyName") for p in (attached or [])
-                ],
-                "groups": [g.get("GroupName") for g in (groups or [])],
+                "attached_policies": [p.get("PolicyName") for p in attached],
+                "groups": [g.get("GroupName") for g in groups],
                 "tags": self._extract_tags(user),
                 "region": "global",
                 "account_id": self.account_id,
-            })
-        return results
+            }
+
+        # IAM has low API rate limits; keep fan-out modest.
+        return self._parallel(describe, users, max_workers=4)
 
     def _collect_roles(self) -> list[dict]:
         iam = self._get_client("iam")
@@ -115,9 +95,7 @@ class IAMCollector(BaseCollector):
 
     def _collect_policies(self) -> list[dict]:
         iam = self._get_client("iam")
-        policies = self._safe_paginate(
-            iam, "list_policies", "Policies", Scope="Local"
-        )
+        policies = self._safe_paginate(iam, "list_policies", "Policies", Scope="Local")
         return [
             {
                 "resource_type": "iam_policy",
@@ -154,53 +132,18 @@ class IAMCollector(BaseCollector):
             for g in groups
         ]
 
-    def _collect_access_analyzers(self) -> list[dict]:
-        aa = self._get_client("accessanalyzer")
-        analyzers = self._safe_call(
-            lambda: aa.list_analyzers().get("analyzers", []),
-            default=[],
-        )
-        results = []
-        for a in (analyzers or []):
-            # Get finding counts
-            finding_counts = {}
-            for status in ["ACTIVE", "ARCHIVED", "RESOLVED"]:
-                count = self._safe_call(
-                    lambda arn=a["arn"], s=status: len(
-                        aa.list_findings(
-                            analyzerArn=arn,
-                            filter={"status": {"eq": [s]}},
-                            maxResults=1,
-                        ).get("findings", [])
-                    ),
-                    default=0,
-                )
-                finding_counts[status.lower()] = count
-
-            results.append({
-                "resource_type": "iam_access_analyzer",
-                "resource_id": a.get("arn", a.get("name", "")),
-                "name": a.get("name", ""),
-                "type": a.get("type"),
-                "status": a.get("status"),
-                "finding_counts": finding_counts,
-                "created_at": str(a.get("createdAt", "")),
-                "region": self.region,
-                "account_id": self.account_id,
-            })
-        return results
-
 
 class IdentityCollector(BaseCollector):
     """
-    Collects KMS, CloudHSM, Secrets Manager, SSM Parameter Store, and ACM.
-    These are regional services.
+    Collects Access Analyzer, KMS, CloudHSM, Secrets Manager, SSM Parameter Store,
+    and ACM. These are regional services.
     """
 
     SERVICE_NAME = "identity"
 
     def collect(self) -> dict:
         results = {}
+        results["iam_access_analyzers"] = self._collect_access_analyzers()
         results["kms_keys"] = self._collect_kms_keys()
         results["cloudhsm_clusters"] = self._collect_cloudhsm()
         results["secrets"] = self._collect_secrets()
@@ -208,56 +151,99 @@ class IdentityCollector(BaseCollector):
         results["acm_certificates"] = self._collect_acm_certs()
         return results
 
-    def _collect_kms_keys(self) -> list[dict]:
-        kms = self._get_client("kms")
-        keys = self._safe_paginate(kms, "list_keys", "Keys")
+    def _collect_access_analyzers(self) -> list[dict]:
+        aa = self._get_client("accessanalyzer")
+        analyzers = self._safe_paginate(aa, "list_analyzers", "analyzers")
         results = []
-        for key in keys:
-            detail = self._safe_call(
-                lambda kid=key["KeyId"]: kms.describe_key(KeyId=kid).get(
-                    "KeyMetadata", {}
-                ),
-                default={},
+        for a in analyzers:
+            active = self._safe_paginate(
+                aa, "list_findings", "findings",
+                max_items=ACCESS_ANALYZER_FINDINGS_CAP,
+                analyzerArn=a["arn"],
+                filter={"status": {"eq": ["ACTIVE"]}},
             )
-            if not detail:
-                continue
-            # Only include customer-managed keys
-            if detail.get("KeyManager") == "AWS":
-                continue
-
-            # Get aliases
-            aliases = self._safe_call(
-                lambda kid=key["KeyId"]: kms.list_aliases(KeyId=kid).get(
-                    "Aliases", []
-                ),
-                default=[],
-            )
-            alias_names = [a.get("AliasName", "") for a in (aliases or [])]
-
             results.append({
-                "resource_type": "kms_key",
-                "resource_id": detail.get("Arn", key["KeyId"]),
-                "name": alias_names[0] if alias_names else key["KeyId"],
-                "key_id": detail.get("KeyId"),
-                "key_state": detail.get("KeyState"),
-                "key_manager": detail.get("KeyManager"),
-                "key_spec": detail.get("KeySpec"),
-                "key_usage": detail.get("KeyUsage"),
-                "creation_date": str(detail.get("CreationDate", "")),
-                "description": detail.get("Description", ""),
-                "aliases": alias_names,
-                "rotation_enabled": detail.get("RotationEnabled", False) if detail.get("KeyManager") == "CUSTOMER" else None,
+                "resource_type": "iam_access_analyzer",
+                "resource_id": a.get("arn", a.get("name", "")),
+                "name": a.get("name", ""),
+                "type": a.get("type"),
+                "status": a.get("status"),
+                "active_findings": len(active),
+                "active_findings_capped": len(active) >= ACCESS_ANALYZER_FINDINGS_CAP,
+                "created_at": str(a.get("createdAt", "")),
                 "region": self.region,
                 "account_id": self.account_id,
             })
         return results
 
+    def _collect_kms_keys(self) -> list[dict]:
+        kms = self._get_client("kms")
+
+        # One ListAliases call per region instead of one per key; aliases under
+        # alias/aws/ identify AWS-managed keys, which are skipped without DescribeKey.
+        aliases_by_key: dict[str, list[str]] = defaultdict(list)
+        aws_managed: set[str] = set()
+        for alias in self._safe_paginate(kms, "list_aliases", "Aliases"):
+            target = alias.get("TargetKeyId")
+            if not target:
+                continue
+            name = alias.get("AliasName", "")
+            aliases_by_key[target].append(name)
+            if name.startswith("alias/aws/"):
+                aws_managed.add(target)
+
+        keys = [k for k in self._safe_paginate(kms, "list_keys", "Keys") if k["KeyId"] not in aws_managed]
+
+        def describe(key: dict) -> dict | None:
+            key_id = key["KeyId"]
+            detail = self._safe_call(
+                lambda: kms.describe_key(KeyId=key_id).get("KeyMetadata", {}),
+                default={},
+            )
+            if not detail or detail.get("KeyManager") == "AWS":
+                return None
+
+            rotation_enabled = None
+            if (
+                detail.get("KeySpec") == "SYMMETRIC_DEFAULT"
+                and detail.get("Origin") == "AWS_KMS"
+                and detail.get("KeyState") == "Enabled"
+            ):
+                rotation_enabled = self._safe_call(
+                    lambda: kms.get_key_rotation_status(KeyId=key_id).get("KeyRotationEnabled", False),
+                    default=None,
+                    ignore=("UnsupportedOperationException",),
+                )
+
+            mr = detail.get("MultiRegionConfiguration") or {}
+            alias_names = sorted(aliases_by_key.get(key_id, []))
+            return {
+                "resource_type": "kms_key",
+                "resource_id": detail.get("Arn", key_id),
+                "name": alias_names[0] if alias_names else key_id,
+                "key_id": detail.get("KeyId"),
+                "key_state": detail.get("KeyState"),
+                "key_manager": detail.get("KeyManager"),
+                "key_spec": detail.get("KeySpec"),
+                "key_usage": detail.get("KeyUsage"),
+                "origin": detail.get("Origin"),
+                "creation_date": str(detail.get("CreationDate", "")),
+                "description": detail.get("Description", ""),
+                "aliases": alias_names,
+                "rotation_enabled": rotation_enabled,
+                "multi_region": detail.get("MultiRegion", False),
+                "multi_region_type": mr.get("MultiRegionKeyType"),
+                "primary_region": (mr.get("PrimaryKey") or {}).get("Region"),
+                "replica_regions": [r.get("Region") for r in mr.get("ReplicaKeys", [])],
+                "region": self.region,
+                "account_id": self.account_id,
+            }
+
+        return [k for k in self._parallel(describe, keys) if k]
+
     def _collect_cloudhsm(self) -> list[dict]:
         hsm = self._get_client("cloudhsmv2")
-        clusters = self._safe_call(
-            lambda: hsm.describe_clusters().get("Clusters", []),
-            default=[],
-        )
+        clusters = self._safe_paginate(hsm, "describe_clusters", "Clusters")
         return [
             {
                 "resource_type": "cloudhsm_cluster",
@@ -272,7 +258,7 @@ class IdentityCollector(BaseCollector):
                 "region": self.region,
                 "account_id": self.account_id,
             }
-            for c in (clusters or [])
+            for c in clusters
         ]
 
     def _collect_secrets(self) -> list[dict]:
@@ -285,6 +271,7 @@ class IdentityCollector(BaseCollector):
                 "name": s.get("Name", ""),
                 "description": s.get("Description", ""),
                 "rotation_enabled": s.get("RotationEnabled", False),
+                "primary_region": s.get("PrimaryRegion"),
                 "last_changed_date": str(s.get("LastChangedDate", "")),
                 "last_accessed_date": str(s.get("LastAccessedDate", "")),
                 "last_rotated_date": str(s.get("LastRotatedDate", "")),
@@ -301,7 +288,7 @@ class IdentityCollector(BaseCollector):
         return [
             {
                 "resource_type": "ssm_parameter",
-                "resource_id": p.get("Name", ""),
+                "resource_id": p.get("ARN") or p.get("Name", ""),
                 "name": p.get("Name", ""),
                 "type": p.get("Type"),
                 "tier": p.get("Tier"),
@@ -316,20 +303,16 @@ class IdentityCollector(BaseCollector):
 
     def _collect_acm_certs(self) -> list[dict]:
         acm = self._get_client("acm")
-        certs = self._safe_paginate(
-            acm, "list_certificates", "CertificateSummaryList"
-        )
-        results = []
-        for cert in certs:
+        certs = self._safe_paginate(acm, "list_certificates", "CertificateSummaryList")
+
+        def describe(cert: dict) -> dict:
             detail = self._safe_call(
-                lambda arn=cert["CertificateArn"]: acm.describe_certificate(
-                    CertificateArn=arn
+                lambda: acm.describe_certificate(
+                    CertificateArn=cert["CertificateArn"]
                 ).get("Certificate", {}),
                 default={},
-            )
-            if not detail:
-                detail = cert
-            results.append({
+            ) or cert
+            return {
                 "resource_type": "acm_certificate",
                 "resource_id": detail.get("CertificateArn", cert.get("CertificateArn", "")),
                 "name": detail.get("DomainName", cert.get("DomainName", "")),
@@ -344,5 +327,6 @@ class IdentityCollector(BaseCollector):
                 "subject_alternative_names": detail.get("SubjectAlternativeNames", []),
                 "region": self.region,
                 "account_id": self.account_id,
-            })
-        return results
+            }
+
+        return self._parallel(describe, certs)
