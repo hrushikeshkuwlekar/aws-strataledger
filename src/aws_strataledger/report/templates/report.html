@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="AWS StrataLedger - Multi-Account Infrastructure Inventory & Topology Report">
-    <title>⚡ AWS StrataLedger — Infrastructure Report</title>
+    <meta name="description" content="AWS StrataLedger - Multi-Account Infrastructure Inventory & Architecture Report">
+    <title>{{ report_title if report_title else "⚡ AWS StrataLedger — Infrastructure Report" }}</title>
     <script>
         // Prevent theme flash before render
         (function() {
@@ -14,13 +14,13 @@
             } catch(e) {}
         })();
     </script>
-    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+    <!-- All assets inline for air-gapped operation -->
     <style>
         /* ═══════════════════════════════════════════════════════════════
            DESIGN SYSTEM — AWS StrataLedger Report
            ═══════════════════════════════════════════════════════════════ */
 
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+        /* System font stack — no external CDN dependency for air-gapped reports */
 
         :root {
             --bg-primary: #0a0e1a;
@@ -103,7 +103,7 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             line-height: 1.6;
@@ -403,7 +403,7 @@
         tbody td:first-child { color: var(--text-primary); font-weight: 500; }
 
         .resource-id {
-            font-family: 'JetBrains Mono', monospace;
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
             font-size: 0.78rem;
             color: var(--accent-cyan);
         }
@@ -465,170 +465,6 @@
         .page-btn.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
         .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        /* ── Topology Diagram ───────────────────────────────────────── */
-        .topology-container {
-            position: relative;
-            border-radius: var(--radius-lg);
-            border: 1px solid var(--border-subtle);
-            background: var(--bg-card);
-            overflow: hidden;
-        }
-
-        .topology-toolbar {
-            display: flex;
-            gap: 8px;
-            padding: 12px 16px;
-            background: var(--toolbar-bg);
-            border-bottom: 1px solid var(--border-subtle);
-            flex-wrap: wrap;
-            align-items: center;
-        }
-
-        .topo-btn {
-            padding: 6px 14px;
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-sm);
-            background: var(--bg-input);
-            color: var(--text-secondary);
-            cursor: pointer;
-            font-size: 0.78rem;
-            font-family: inherit;
-            transition: var(--transition);
-        }
-
-        .topo-btn:hover { border-color: var(--accent-blue); color: var(--text-primary); }
-        .topo-btn.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
-
-        .topo-divider {
-            width: 1px;
-            height: 20px;
-            background: var(--border-subtle);
-            margin: 0 4px;
-        }
-
-        #topology-canvas {
-            width: 100%;
-            height: 720px;
-            background: var(--canvas-bg);
-            transition: background 0.25s ease;
-        }
-
-        .topology-detail {
-            position: absolute;
-            top: 60px; right: 16px;
-            width: 320px;
-            max-height: calc(100% - 80px);
-            overflow-y: auto;
-            background: var(--detail-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-accent);
-            border-radius: var(--radius-md);
-            padding: 1rem;
-            font-size: 0.8rem;
-            display: none;
-            z-index: 10;
-            box-shadow: var(--shadow-lg);
-        }
-
-        .topology-detail.visible { display: block; }
-
-        .topology-detail h4 {
-            font-size: 0.85rem;
-            margin-bottom: 0.5rem;
-            color: var(--accent-cyan);
-        }
-
-        .topology-detail .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 4px 0;
-            border-bottom: 1px solid var(--border-subtle);
-        }
-
-        .topology-detail .detail-key {
-            color: var(--text-muted);
-            font-weight: 500;
-        }
-
-        .topology-detail .detail-value {
-            color: var(--text-primary);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.75rem;
-            max-width: 180px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            text-align: right;
-        }
-
-        .topology-legend {
-            display: flex;
-            gap: 1.5rem;
-            padding: 12px 18px;
-            background: var(--toolbar-bg);
-            border-top: 1px solid var(--border-subtle);
-            flex-wrap: wrap;
-            align-items: center;
-            font-size: 0.75rem;
-        }
-
-        .legend-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .legend-title {
-            font-weight: 700;
-            color: var(--text-muted);
-            font-size: 0.68rem;
-            letter-spacing: 0.05em;
-        }
-
-        .legend-pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 2px 8px;
-            border-radius: var(--radius-sm);
-            font-size: 0.72rem;
-            font-weight: 600;
-        }
-
-        .pill-vpc {
-            border: 1.5px dashed #8C4FFF;
-            color: #8C4FFF;
-            background: rgba(140, 79, 255, 0.1);
-        }
-
-        .pill-pub {
-            border: 1px solid #10B981;
-            color: #10B981;
-            background: rgba(16, 185, 129, 0.1);
-        }
-
-        .pill-app {
-            border: 1px solid #3B82F6;
-            color: #3B82F6;
-            background: rgba(59, 130, 246, 0.1);
-        }
-
-        .pill-db {
-            border: 1px solid #A855F7;
-            color: #A855F7;
-            background: rgba(168, 85, 247, 0.1);
-        }
-
-        .legend-flow {
-            font-size: 0.72rem;
-            font-weight: 600;
-            padding: 2px 6px;
-        }
-
-        .flow-traffic { color: #38BDF8; }
-        .flow-egress { color: #10B981; }
-        .flow-tgw { color: #8C4FFF; }
-        .flow-db { color: #3B82F6; }
-        .flow-peer { color: #F97316; }
 
         /* ── Security Tab ───────────────────────────────────────────── */
         .security-grid {
@@ -867,7 +703,6 @@
             .main { padding: 1rem; }
             .summary-grid { grid-template-columns: repeat(2, 1fr); }
             .header-meta { display: none; }
-            .topology-detail { width: 260px; }
         }
     </style>
 </head>
@@ -900,8 +735,9 @@
 <nav class="nav-tabs" id="nav-tabs">
     <div class="nav-tab active" data-tab="dashboard">📊 Dashboard</div>
     <div class="nav-tab" data-tab="inventory">📋 Inventory</div>
-    <div class="nav-tab" data-tab="topology">🗺️ Topology</div>
+    <div class="nav-tab" data-tab="architecture">🏗️ Architecture</div>
     <div class="nav-tab" data-tab="security">🔒 Security</div>
+    <div class="nav-tab" data-tab="coverage">📡 Coverage</div>
 </nav>
 
 <main class="main">
@@ -1030,6 +866,10 @@
             <label>Type</label>
             <select id="filter-type"><option value="">All Types</option></select>
         </div>
+        <div class="filter-group">
+            <label>Status</label>
+            <select id="filter-status"><option value="">All Statuses</option></select>
+        </div>
         <button class="export-btn" onclick="exportCSV()">📥 Export CSV</button>
     </div>
 
@@ -1057,56 +897,31 @@
 </section>
 
 <!-- ══════════════════════════════════════════════════════════════════
-     TOPOLOGY TAB
+     ARCHITECTURE DIAGRAM TAB
      ══════════════════════════════════════════════════════════════════ -->
-<section class="tab-content" id="tab-topology">
-
+<section class="tab-content" id="tab-architecture">
     <div class="filters-bar">
         <div class="filter-group">
-            <label>AWS Account & Region</label>
-            <select id="topology-selector"></select>
+            <label>Account</label>
+            <select id="arch-selector"></select>
         </div>
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-muted);">
-            <span>Visual Standard: <strong style="color: var(--accent-cyan);">AWS Reference Architecture (Official Icons)</strong></span>
-        </div>
-    </div>
-
-    <div class="topology-container">
-        <div class="topology-toolbar">
-            <button class="topo-btn active" id="btn-layout-aws" onclick="setLayout('aws-landscape')">🏛️ AWS Architecture</button>
-            <button class="topo-btn" id="btn-layout-hierarchical" onclick="setLayout('breadthfirst')">📐 Hierarchical Flow</button>
-            <button class="topo-btn" id="btn-layout-cose" onclick="setLayout('cose')">🌐 Force-Directed</button>
-            <div class="topo-divider"></div>
-            <button class="topo-btn" onclick="cy && cy.fit(undefined, 50)" title="Fit View">🔍 Fit</button>
-            <button class="topo-btn" onclick="cy && cy.zoom(cy.zoom() * 1.3)" title="Zoom In">➕ Zoom In</button>
-            <button class="topo-btn" onclick="cy && cy.zoom(cy.zoom() / 1.3)" title="Zoom Out">➖ Zoom Out</button>
-            <button class="topo-btn" onclick="resetTopoView()" title="Center Landscape">🎯 Reset View</button>
-            <input type="search" id="topo-search" placeholder="Search resource name or ID..." style="margin-left: auto;">
-        </div>
-        <div id="topology-canvas"></div>
-        <div class="topology-detail" id="topology-detail">
-            <h4 id="detail-title">Resource Details</h4>
-            <div id="detail-content"></div>
-        </div>
-        <div class="topology-legend">
-            <div class="legend-group">
-                <span class="legend-title">CONTAINERS:</span>
-                <span class="legend-pill pill-vpc">VPC Boundary</span>
-                <span class="legend-pill pill-pub">Public Subnet</span>
-                <span class="legend-pill pill-app">Private App Subnet</span>
-                <span class="legend-pill pill-db">Private DB Subnet</span>
-            </div>
-            <div class="legend-group">
-                <span class="legend-title">FLOWS:</span>
-                <span class="legend-flow flow-traffic">── Ingress / Traffic</span>
-                <span class="legend-flow flow-egress">- - Outbound NAT</span>
-                <span class="legend-flow flow-tgw">━━ TGW Hub</span>
-                <span class="legend-flow flow-db">── Database Access</span>
-                <span class="legend-flow flow-peer">- - Peering</span>
-            </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <button class="toolbar-btn" onclick="archFitView()" title="Fit to view">Fit</button>
+            <button class="toolbar-btn" onclick="archDownloadSvg()" title="Download SVG">⬇ SVG</button>
         </div>
     </div>
-
+    <div id="arch-diagram-container" style="width: 100%; overflow: auto; background: var(--bg-primary); border-radius: 8px; min-height: 400px; position: relative;">
+        <div id="arch-diagram" style="padding: 16px; transform-origin: 0 0;">
+            {% for key, svg in diagrams.items() %}
+            <div class="arch-panel" data-account="{{ key }}" {% if not loop.first %}style="display:none"{% endif %}>
+                {{ svg }}
+            </div>
+            {% endfor %}
+            {% if not diagrams %}
+            <div class="empty-state"><p>No architecture diagram available — scan inventory first</p></div>
+            {% endif %}
+        </div>
+    </div>
 </section>
 
 <!-- ══════════════════════════════════════════════════════════════════
@@ -1118,6 +933,13 @@
 
 </section>
 
+<!-- ══════════════════════════════════════════════════════════════════
+     COVERAGE TAB
+     ══════════════════════════════════════════════════════════════════ -->
+<section class="tab-content" id="tab-coverage">
+    <div id="coverage-content"></div>
+</section>
+
 </main>
 
 <!-- ══════════════════════════════════════════════════════════════════
@@ -1126,12 +948,22 @@
 <script>
 // ── Data ────────────────────────────────────────────────────────────
 const ALL_RESOURCES = {{ resources_json }};
-const TOPOLOGIES = {{ topologies_json }};
 const SECURITY_DATA = {{ security_json }};
 const SUMMARY = {{ summary_json }};
+const ISSUES = {{ issues_json }};
 
-// Cytoscape instance handle (declared at top to prevent Temporal Dead Zone in theme init)
-let cy = null;
+// ── HTML escape helper ──────────────────────────────────────────────
+// All user-controlled strings (resource names, IDs, tags) MUST be escaped
+// before interpolation into innerHTML to prevent XSS.
+function esc(s) {
+    if (s == null) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 // ── Theme (Light / Dark) ───────────────────────────────────────────
 function initTheme() {
@@ -1158,57 +990,12 @@ function applyTheme(theme) {
             text.textContent = 'Dark';
         }
     }
-    if (cy) {
-        updateCytoscapeTheme(theme);
-    }
 }
 
 function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
     const next = current === 'dark' ? 'light' : 'dark';
     applyTheme(next);
-}
-
-function updateCytoscapeTheme(theme) {
-    if (!cy) return;
-    const isLight = theme === 'light';
-    cy.style()
-        .selector('node[!isCompoundParent]')
-        .style({
-            'color': isLight ? '#0f172a' : '#f8fafc',
-            'text-outline-color': isLight ? '#ffffff' : '#0a0e1a',
-        })
-        .selector('node[nodeType="vpc"]')
-        .style({
-            'background-color': isLight ? '#f1f5f9' : '#0b132b',
-            'background-opacity': isLight ? 0.6 : 0.35,
-            'text-outline-color': isLight ? '#ffffff' : '#0b132b',
-        })
-        .selector('node[nodeType="subnet_public"]')
-        .style({
-            'background-color': isLight ? '#ecfdf5' : '#064e3b',
-            'background-opacity': isLight ? 0.4 : 0.2,
-            'text-outline-color': isLight ? '#ffffff' : '#064e3b',
-        })
-        .selector('node[nodeType="subnet_private"][tier="app"]')
-        .style({
-            'background-color': isLight ? '#eff6ff' : '#1e3a8a',
-            'background-opacity': isLight ? 0.4 : 0.2,
-            'text-outline-color': isLight ? '#ffffff' : '#1e3a8a',
-        })
-        .selector('node[nodeType="subnet_private"][tier="db"]')
-        .style({
-            'background-color': isLight ? '#faf5ff' : '#581c87',
-            'background-opacity': isLight ? 0.4 : 0.2,
-            'text-outline-color': isLight ? '#ffffff' : '#581c87',
-        })
-        .selector('edge')
-        .style({
-            'line-color': isLight ? '#94A3B8' : '#475569',
-            'color': isLight ? '#475569' : '#94a3b8',
-            'text-outline-color': isLight ? '#ffffff' : '#0a0e1a',
-        })
-        .update();
 }
 
 initTheme();
@@ -1220,9 +1007,6 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
         document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-        if (tab.dataset.tab === 'topology' && cy) {
-            setTimeout(() => cy.resize(), 100);
-        }
     });
 });
 
@@ -1332,8 +1116,8 @@ function renderCategoryChart() {
         };
         html += `
             <div class="category-tile"
-                 onclick="filterByCategory('${cat}')"
-                 title="Click to explore ${meta.label} (${count.toLocaleString()} assets) in Inventory"
+                 onclick="filterByCategory('${esc(cat)}')"
+                 title="Click to explore ${esc(meta.label)} (${count.toLocaleString()} assets) in Inventory"
                  style="--tile-gradient: ${meta.gradient}; --tile-border: ${meta.border}; --tile-glow: ${meta.glow}; --tile-bg-accent: ${meta.bg};">
                 <div class="tile-top">
                     <div class="tile-icon-box">${meta.icon}</div>
@@ -1341,7 +1125,7 @@ function renderCategoryChart() {
                 </div>
                 <div class="tile-body">
                     <div class="tile-count">${count.toLocaleString()}</div>
-                    <div class="tile-label">${meta.label}</div>
+                    <div class="tile-label">${esc(meta.label)}</div>
                 </div>
                 <div class="tile-bar-mini">
                     <div class="tile-bar-mini-fill" style="width: ${Math.max(parseFloat(pct), 3)}%;"></div>
@@ -1384,12 +1168,14 @@ let sortAsc = true;
 
 // Populate filter dropdowns
 function populateFilters() {
-    const accounts = new Set(), regions = new Set(), categories = new Set(), types = new Set();
+    const accounts = new Set(), regions = new Set(), categories = new Set(), types = new Set(), statuses = new Set();
     ALL_RESOURCES.forEach(r => {
         if (r._account_alias) accounts.add(r._account_alias);
         if (r.region) regions.add(r.region);
         if (r._category) categories.add(r._category);
         if (r.resource_type) types.add(r.resource_type);
+        const st = r.state || r.status || r.lifecycle_state || '';
+        if (st) statuses.add(st);
     });
 
     const addOptions = (sel, vals) => {
@@ -1404,6 +1190,7 @@ function populateFilters() {
     addOptions(document.getElementById('filter-region'), regions);
     addOptions(document.getElementById('filter-category'), categories);
     addOptions(document.getElementById('filter-type'), types);
+    addOptions(document.getElementById('filter-status'), statuses);
 }
 populateFilters();
 
@@ -1413,12 +1200,14 @@ function applyFilters() {
     const region = document.getElementById('filter-region').value;
     const category = document.getElementById('filter-category').value;
     const type = document.getElementById('filter-type').value;
+    const status = document.getElementById('filter-status').value;
 
     filteredResources = ALL_RESOURCES.filter(r => {
         if (account && r._account_alias !== account) return false;
         if (region && r.region !== region) return false;
         if (category && r._category !== category) return false;
         if (type && r.resource_type !== type) return false;
+        if (status && (r.state || r.status || r.lifecycle_state || '') !== status) return false;
         if (search) {
             const searchStr = [r.name, r.resource_id, r.resource_type, r.region, r._account_alias]
                 .filter(Boolean).join(' ').toLowerCase();
@@ -1451,15 +1240,15 @@ function renderTable() {
     } else {
         tbody.innerHTML = page.map(r => {
             const state = r.state || r.status || r.lifecycle_state || '';
-            const stateClass = state.toLowerCase().replace(/[^a-z]/g, '-');
+            const stateClass = String(state).toLowerCase().replace(/[^a-z]/g, '-');
             return `<tr>
-                <td>${r.name || '—'}</td>
-                <td>${(r.resource_type || '').replace(/_/g, ' ')}</td>
-                <td class="resource-id">${r.resource_id || ''}</td>
-                <td>${r._account_alias || ''}</td>
-                <td>${r.region || ''}</td>
-                <td>${state ? `<span class="status-badge ${stateClass}">${state}</span>` : '—'}</td>
-                <td>${r._category || ''}</td>
+                <td>${esc(r.name) || '—'}</td>
+                <td>${esc((r.resource_type || '').replace(/_/g, ' '))}</td>
+                <td class="resource-id">${esc(r.resource_id)}</td>
+                <td>${esc(r._account_alias)}</td>
+                <td>${esc(r.region)}</td>
+                <td>${state ? `<span class="status-badge ${esc(stateClass)}">${esc(state)}</span>` : '—'}</td>
+                <td>${esc(r._category)}</td>
             </tr>`;
         }).join('');
     }
@@ -1506,17 +1295,18 @@ document.querySelectorAll('#inventory-table thead th[data-sort]').forEach(th => 
 });
 
 // Filter listeners
-['inventory-search', 'filter-account', 'filter-region', 'filter-category', 'filter-type'].forEach(id => {
+['inventory-search', 'filter-account', 'filter-region', 'filter-category', 'filter-type', 'filter-status'].forEach(id => {
     document.getElementById(id).addEventListener('input', applyFilters);
     document.getElementById(id).addEventListener('change', applyFilters);
 });
 
 // CSV Export
 function exportCSV() {
-    const headers = ['Name', 'Type', 'Resource ID', 'Account', 'Region', 'Status', 'Category'];
+    const headers = ['Name', 'Type', 'Resource ID', 'ARN', 'Account', 'Account ID', 'Region', 'Status', 'Category'];
     const rows = filteredResources.map(r => [
-        r.name || '', r.resource_type || '', r.resource_id || '',
-        r._account_alias || '', r.region || '', r.state || r.status || '', r._category || ''
+        r.name || '', r.resource_type || '', r.resource_id || '', r.arn || '',
+        r._account_alias || '', r._account_id || '', r.region || '',
+        r.state || r.status || r.lifecycle_state || '', r._category || ''
     ]);
 
     let csv = headers.join(',') + '\n';
@@ -1534,776 +1324,6 @@ function exportCSV() {
 applyFilters();
 
 // ══════════════════════════════════════════════════════════════════
-// TOPOLOGY DIAGRAM (Cytoscape.js — Official AWS Architecture Landscape)
-// ══════════════════════════════════════════════════════════════════
-// cy instance handle declared at top of script
-
-// Official AWS Architecture Vector SVG Icons Library
-function makeSvgUri(bgColor, innerSvg) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">` +
-        `<rect width="48" height="48" rx="10" fill="${bgColor}"/>` +
-        innerSvg +
-        `</svg>`;
-    return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-}
-
-const AWS_SVG_ICONS = {
-    // ── COMPUTE (AWS Orange #FF9900) ──────────────────────────────────
-    ec2: makeSvgUri('#FF9900', `
-        <rect x="10" y="12" width="28" height="24" rx="3" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
-        <line x1="10" y1="20" x2="38" y2="20" stroke="#FFFFFF" stroke-width="1.8"/>
-        <line x1="10" y1="28" x2="38" y2="28" stroke="#FFFFFF" stroke-width="1.8"/>
-        <circle cx="15" cy="16" r="1.5" fill="#FFFFFF"/>
-        <circle cx="20" cy="16" r="1.5" fill="#FFFFFF"/>
-        <circle cx="15" cy="24" r="1.5" fill="#FFFFFF"/>
-        <circle cx="20" cy="24" r="1.5" fill="#FFFFFF"/>
-        <circle cx="15" cy="32" r="1.5" fill="#FFFFFF"/>
-        <line x1="26" y1="16" x2="34" y2="16" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="26" y1="24" x2="34" y2="24" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="26" y1="32" x2="34" y2="32" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/>
-    `),
-    eks_cluster: makeSvgUri('#FF9900', `
-        <circle cx="24" cy="24" r="6" fill="#FFFFFF"/>
-        <circle cx="24" cy="10" r="3.5" fill="#FFFFFF"/>
-        <circle cx="36" cy="17" r="3.5" fill="#FFFFFF"/>
-        <circle cx="36" cy="31" r="3.5" fill="#FFFFFF"/>
-        <circle cx="24" cy="38" r="3.5" fill="#FFFFFF"/>
-        <circle cx="12" cy="31" r="3.5" fill="#FFFFFF"/>
-        <circle cx="12" cy="17" r="3.5" fill="#FFFFFF"/>
-        <line x1="24" y1="18" x2="24" y2="13.5" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="29.2" y1="21" x2="33" y2="19" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="29.2" y1="27" x2="33" y2="29" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="24" y1="30" x2="24" y2="34.5" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="18.8" y1="27" x2="15" y2="29" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="18.8" y1="21" x2="15" y2="19" stroke="#FFFFFF" stroke-width="2"/>
-        <circle cx="24" cy="24" r="2.5" fill="#FF9900"/>
-    `),
-    lambda: makeSvgUri('#FF9900', `
-        <path d="M14 36 L21 21 L26 12 L30 12 L24.5 22.5 L34 36 L29 36 L22 25 L16.5 36 Z" fill="#FFFFFF"/>
-    `),
-    auto_scaling_group: makeSvgUri('#FF9900', `
-        <rect x="14" y="15" width="20" height="18" rx="2" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M10 24 L6 24 M9 21 L6 24 L9 27" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M38 24 L42 24 M39 21 L42 24 L39 27" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M24 11 L24 8 M21 11 L24 8 L27 11" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M24 37 L24 40 M21 37 L24 40 L27 37" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    `),
-
-    // ── NETWORKING & CONTENT DELIVERY (AWS Purple #8C4FFF) ────────────
-    transit_gateway: makeSvgUri('#8C4FFF', `
-        <circle cx="24" cy="24" r="8" fill="none" stroke="#FFFFFF" stroke-width="2.5"/>
-        <circle cx="24" cy="24" r="3.5" fill="#FFFFFF"/>
-        <path d="M24 16 L24 8 M21 11 L24 8 L27 11" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M24 32 L24 40 M21 37 L24 40 L27 37" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M16 24 L8 24 M11 21 L8 24 L11 27" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M32 24 L40 24 M37 21 L40 24 L37 27" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    `),
-    internet_gateway: makeSvgUri('#8C4FFF', `
-        <circle cx="24" cy="24" r="14" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <ellipse cx="24" cy="24" rx="7" ry="14" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="10" y1="24" x2="38" y2="24" stroke="#FFFFFF" stroke-width="1.5"/>
-        <path d="M14 14 L20 14 L20 20" stroke="#FF9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <path d="M34 34 L28 34 L28 28" stroke="#FF9900" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    `),
-    nat_gateway: makeSvgUri('#8C4FFF', `
-        <rect x="10" y="12" width="28" height="24" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M16 27 L24 19 L32 27" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        <path d="M24 19 L24 33" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
-        <circle cx="16" cy="28" r="2" fill="#FFFFFF"/>
-        <circle cx="32" cy="28" r="2" fill="#FFFFFF"/>
-    `),
-    load_balancer: makeSvgUri('#8C4FFF', `
-        <circle cx="24" cy="13" r="3.5" fill="#FFFFFF"/>
-        <circle cx="13" cy="34" r="3" fill="#FFFFFF"/>
-        <circle cx="24" cy="34" r="3" fill="#FFFFFF"/>
-        <circle cx="35" cy="34" r="3" fill="#FFFFFF"/>
-        <path d="M24 17 L24 23 M24 23 L14 30 M24 23 L24 30 M24 23 L34 30" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    `),
-    vpc_endpoint: makeSvgUri('#8C4FFF', `
-        <circle cx="16" cy="24" r="5" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <circle cx="32" cy="24" r="5" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="21" y1="24" x2="27" y2="24" stroke="#FFFFFF" stroke-width="2.5" stroke-dasharray="2 1"/>
-        <path d="M25 20 L29 24 L25 28" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    `),
-    vpn_gateway: makeSvgUri('#8C4FFF', `
-        <rect x="14" y="20" width="20" height="15" rx="3" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M18 20 L18 16 C18 12.5 30 12.5 30 16 L30 20" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <circle cx="24" cy="27" r="2" fill="#FFFFFF"/>
-    `),
-    vpc: makeSvgUri('#8C4FFF', `
-        <path d="M14 32 C10 32 8 28 9 24 C10 20 14 18 16 18 C18 14 24 13 28 15 C32 14 36 17 37 21 C40 22 41 26 39 29 C38 32 35 32 34 32 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
-        <rect x="18" y="24" width="12" height="6" rx="1.5" fill="#FFFFFF"/>
-        <circle cx="21" cy="27" r="1" fill="#8C4FFF"/>
-        <circle cx="27" cy="27" r="1" fill="#8C4FFF"/>
-    `),
-    subnet_public: makeSvgUri('#10B981', `
-        <rect x="9" y="10" width="30" height="28" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="9" y1="18" x2="39" y2="18" stroke="#FFFFFF" stroke-width="1.8"/>
-        <circle cx="24" cy="28" r="6" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-        <line x1="18" y1="28" x2="30" y2="28" stroke="#FFFFFF" stroke-width="1.2"/>
-        <ellipse cx="24" cy="28" rx="3" ry="6" fill="none" stroke="#FFFFFF" stroke-width="1.2"/>
-    `),
-    subnet_private: makeSvgUri('#3B82F6', `
-        <rect x="9" y="10" width="30" height="28" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="9" y1="18" x2="39" y2="18" stroke="#FFFFFF" stroke-width="1.8"/>
-        <rect x="20" y="26" width="8" height="6" rx="1" fill="#FFFFFF"/>
-        <path d="M22 26 L22 23 C22 21.5 26 21.5 26 23 L26 26" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
-    `),
-
-    // ── DATABASE (AWS Blue #2E73B8) ───────────────────────────────────
-    rds_instance: makeSvgUri('#2E73B8', `
-        <ellipse cx="24" cy="14" rx="13" ry="5" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M11 14 L11 24 C11 27 37 27 37 24 L37 14" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M11 24 L11 34 C11 37 37 37 37 34 L37 24" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="16" y1="19" x2="22" y2="19" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/>
-        <line x1="16" y1="29" x2="22" y2="29" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round"/>
-    `),
-    rds_cluster: makeSvgUri('#2E73B8', `
-        <ellipse cx="19" cy="16" rx="9" ry="3.5" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-        <path d="M10 16 L10 26 C10 28.5 28 28.5 28 26 L28 16" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-        <ellipse cx="29" cy="22" rx="9" ry="3.5" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-        <path d="M20 22 L20 32 C20 34.5 38 34.5 38 32 L38 22" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-    `),
-    dynamodb_table: makeSvgUri('#2E73B8', `
-        <rect x="11" y="11" width="11" height="11" rx="2" fill="#FFFFFF"/>
-        <rect x="26" y="11" width="11" height="11" rx="2" fill="#FFFFFF"/>
-        <rect x="11" y="26" width="11" height="11" rx="2" fill="#FFFFFF"/>
-        <rect x="26" y="26" width="11" height="11" rx="2" fill="#FFFFFF"/>
-        <line x1="22" y1="16.5" x2="26" y2="16.5" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="22" y1="31.5" x2="26" y2="31.5" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="16.5" y1="22" x2="16.5" y2="26" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="31.5" y1="22" x2="31.5" y2="26" stroke="#FFFFFF" stroke-width="2"/>
-    `),
-
-    // ── STORAGE (AWS Green #3F8624) ───────────────────────────────────
-    s3_bucket: makeSvgUri('#3F8624', `
-        <path d="M12 15 L15 35 C15 38 33 38 33 35 L36 15 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
-        <ellipse cx="24" cy="15" rx="12" ry="4" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
-        <path d="M13.5 22 C16 24 32 24 34.5 22" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-        <path d="M14.5 29 C17 31 31 31 33.5 29" fill="none" stroke="#FFFFFF" stroke-width="1.8"/>
-    `),
-    efs_file_system: makeSvgUri('#3F8624', `
-        <path d="M10 14 L20 14 L23 18 L38 18 L38 34 L10 34 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
-        <circle cx="18" cy="27" r="2" fill="#FFFFFF"/>
-        <circle cx="24" cy="24" r="2" fill="#FFFFFF"/>
-        <circle cx="30" cy="27" r="2" fill="#FFFFFF"/>
-        <line x1="18" y1="27" x2="24" y2="24" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="24" y1="24" x2="30" y2="27" stroke="#FFFFFF" stroke-width="1.5"/>
-    `),
-
-    // ── SECURITY, IDENTITY & COMPLIANCE (AWS Red #DD344C) ─────────────
-    network_firewall: makeSvgUri('#DD344C', `
-        <path d="M24 8 L36 13 L36 24 C36 32 24 39 24 39 C24 39 12 32 12 24 L12 13 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
-        <line x1="16" y1="21" x2="32" y2="21" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="16" y1="27" x2="32" y2="27" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="22" y1="16" x2="22" y2="21" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="26" y1="21" x2="26" y2="27" stroke="#FFFFFF" stroke-width="1.5"/>
-        <line x1="20" y1="27" x2="20" y2="33" stroke="#FFFFFF" stroke-width="1.5"/>
-    `),
-    waf_web_acl: makeSvgUri('#DD344C', `
-        <rect x="10" y="11" width="28" height="26" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="10" y1="19" x2="38" y2="19" stroke="#FFFFFF" stroke-width="1.8"/>
-        <path d="M24 21 L30 24 L30 29 C30 32.5 24 35 24 35 C24 35 18 32.5 18 29 L18 24 Z" fill="#FFFFFF"/>
-    `),
-    kms_key: makeSvgUri('#DD344C', `
-        <circle cx="19" cy="20" r="7" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
-        <line x1="24" y1="25" x2="35" y2="36" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="31" y1="32" x2="34" y2="29" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
-        <line x1="33" y1="34" x2="36" y2="31" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
-    `),
-    secrets_manager: makeSvgUri('#DD344C', `
-        <rect x="11" y="11" width="26" height="26" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
-        <circle cx="24" cy="24" r="6" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <circle cx="24" cy="24" r="2" fill="#FFFFFF"/>
-        <line x1="24" y1="18" x2="24" y2="20" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="24" y1="28" x2="24" y2="30" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="18" y1="24" x2="20" y2="24" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="28" y1="24" x2="30" y2="24" stroke="#FFFFFF" stroke-width="2"/>
-    `),
-
-    // ── MONITORING & MANAGEMENT (AWS Magenta/Pink #E05243) ────────────
-    cloudwatch_alarm: makeSvgUri('#E05243', `
-        <path d="M24 10 C18 10 16 16 16 23 L14 27 L34 27 L32 23 C32 16 30 10 24 10 Z" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round"/>
-        <path d="M21 28 C21 30 22.5 32 24 32 C25.5 32 27 30 27 28" fill="none" stroke="#FFFFFF" stroke-width="2.2"/>
-        <circle cx="24" cy="8" r="1.5" fill="#FFFFFF"/>
-    `),
-    eventbridge_rule: makeSvgUri('#B00889', `
-        <circle cx="24" cy="24" r="5" fill="#FFFFFF"/>
-        <line x1="12" y1="24" x2="19" y2="24" stroke="#FFFFFF" stroke-width="2"/>
-        <line x1="29" y1="24" x2="36" y2="24" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M24 19 L24 12 M24 29 L24 36" stroke="#FFFFFF" stroke-width="2"/>
-    `),
-
-    generic: makeSvgUri('#64748B', `
-        <rect x="12" y="12" width="24" height="24" rx="4" fill="none" stroke="#FFFFFF" stroke-width="2"/>
-        <path d="M12 20 L24 26 L36 20 M24 26 L24 36" stroke="#FFFFFF" stroke-width="1.8"/>
-    `),
-};
-
-// Populate topology selector
-const topoSelector = document.getElementById('topology-selector');
-const topoKeys = Object.keys(TOPOLOGIES);
-if (topoKeys.length === 0) {
-    topoSelector.innerHTML = '<option value="">No topology data</option>';
-} else {
-    topoKeys.forEach(k => {
-        const opt = document.createElement('option');
-        opt.value = k; opt.textContent = k;
-        topoSelector.appendChild(opt);
-    });
-}
-
-function initTopology(key) {
-    const data = TOPOLOGIES[key];
-    if (!data) return;
-
-    const elements = [];
-    const parentIds = new Set(data.nodes.filter(n => n.parent).map(n => n.parent));
-
-    data.nodes.forEach(n => {
-        const isCompoundParent = parentIds.has(n.id) || n.type === 'vpc';
-        const icon = AWS_SVG_ICONS[n.type] || AWS_SVG_ICONS['generic'];
-
-        const el = {
-            group: 'nodes',
-            data: {
-                id: n.id,
-                label: (n.label || n.id).split('\n')[0],
-                fullLabel: n.label || n.id,
-                nodeType: n.type,
-                tier: n.tier || 'app',
-                isCompoundParent: isCompoundParent,
-                iconSvg: icon,
-                details: n.data || {},
-            },
-        };
-        if (n.parent && data.nodes.some(p => p.id === n.parent)) {
-            el.data.parent = n.parent;
-        }
-        elements.push(el);
-    });
-
-    data.edges.forEach(e => {
-        elements.push({
-            group: 'edges',
-            data: {
-                source: e.source,
-                target: e.target,
-                label: e.label || '',
-                edgeType: e.type || e.edgeType || 'default',
-            }
-        });
-    });
-
-    if (cy) cy.destroy();
-
-    const isLightMode = document.documentElement.getAttribute('data-theme') === 'light';
-
-    cy = cytoscape({
-        container: document.getElementById('topology-canvas'),
-        elements: elements,
-        style: [
-            // Leaf Nodes — Rendered with authentic official AWS Vector Icons
-            {
-                selector: 'node[!isCompoundParent]',
-                style: {
-                    'label': 'data(label)',
-                    'background-image': 'data(iconSvg)',
-                    'background-fit': 'contain',
-                    'background-opacity': 0,
-                    'border-width': 0,
-                    'shape': 'rectangle',
-                    'width': 48,
-                    'height': 48,
-                    'color': isLightMode ? '#0f172a' : '#f8fafc',
-                    'font-size': '10px',
-                    'font-weight': '600',
-                    'font-family': 'Inter, system-ui, sans-serif',
-                    'text-valign': 'bottom',
-                    'text-halign': 'center',
-                    'text-margin-y': 7,
-                    'text-wrap': 'wrap',
-                    'text-max-width': '125px',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#0a0e1a',
-                    'text-outline-width': 2.5,
-                    'min-zoomed-font-size': 8,
-                },
-            },
-            // Fallback for leaf node without icon
-            {
-                selector: 'node[!isCompoundParent][!iconSvg]',
-                style: {
-                    'background-color': '#64748B',
-                    'background-opacity': 1,
-                    'shape': 'round-rectangle',
-                }
-            },
-            // VPC Boundary Container Box
-            {
-                selector: 'node[nodeType="vpc"]',
-                style: {
-                    'background-color': isLightMode ? '#f1f5f9' : '#0b132b',
-                    'background-opacity': isLightMode ? 0.6 : 0.35,
-                    'border-width': 2,
-                    'border-style': 'dashed',
-                    'border-color': '#8C4FFF',
-                    'border-opacity': 0.85,
-                    'shape': 'round-rectangle',
-                    'corner-radius': 10,
-                    'padding': 28,
-                    'text-valign': 'top',
-                    'text-halign': 'left',
-                    'text-margin-x': 14,
-                    'text-margin-y': 14,
-                    'font-weight': 'bold',
-                    'font-size': '12px',
-                    'font-family': 'Inter, system-ui, sans-serif',
-                    'color': '#8C4FFF',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#0b132b',
-                    'text-outline-width': 2,
-                },
-            },
-            // Public Subnet Boundary Box
-            {
-                selector: 'node[nodeType="subnet_public"]',
-                style: {
-                    'background-color': isLightMode ? '#ecfdf5' : '#064e3b',
-                    'background-opacity': isLightMode ? 0.4 : 0.2,
-                    'border-width': 1.5,
-                    'border-style': 'solid',
-                    'border-color': '#10B981',
-                    'border-opacity': 0.8,
-                    'shape': 'round-rectangle',
-                    'corner-radius': 8,
-                    'padding': 22,
-                    'text-valign': 'top',
-                    'text-halign': 'left',
-                    'text-margin-x': 12,
-                    'text-margin-y': 12,
-                    'font-weight': '600',
-                    'font-size': '10px',
-                    'font-family': 'Inter, system-ui, sans-serif',
-                    'color': '#10B981',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#064e3b',
-                    'text-outline-width': 1.5,
-                },
-            },
-            // Private App Subnet Boundary Box
-            {
-                selector: 'node[nodeType="subnet_private"][tier="app"]',
-                style: {
-                    'background-color': isLightMode ? '#eff6ff' : '#1e3a8a',
-                    'background-opacity': isLightMode ? 0.4 : 0.2,
-                    'border-width': 1.5,
-                    'border-style': 'solid',
-                    'border-color': '#3B82F6',
-                    'border-opacity': 0.8,
-                    'shape': 'round-rectangle',
-                    'corner-radius': 8,
-                    'padding': 22,
-                    'text-valign': 'top',
-                    'text-halign': 'left',
-                    'text-margin-x': 12,
-                    'text-margin-y': 12,
-                    'font-weight': '600',
-                    'font-size': '10px',
-                    'font-family': 'Inter, system-ui, sans-serif',
-                    'color': '#3B82F6',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#1e3a8a',
-                    'text-outline-width': 1.5,
-                },
-            },
-            // Private Database Subnet Boundary Box
-            {
-                selector: 'node[nodeType="subnet_private"][tier="db"]',
-                style: {
-                    'background-color': isLightMode ? '#faf5ff' : '#581c87',
-                    'background-opacity': isLightMode ? 0.4 : 0.2,
-                    'border-width': 1.5,
-                    'border-style': 'solid',
-                    'border-color': '#A855F7',
-                    'border-opacity': 0.8,
-                    'shape': 'round-rectangle',
-                    'corner-radius': 8,
-                    'padding': 22,
-                    'text-valign': 'top',
-                    'text-halign': 'left',
-                    'text-margin-x': 12,
-                    'text-margin-y': 12,
-                    'font-weight': '600',
-                    'font-size': '10px',
-                    'font-family': 'Inter, system-ui, sans-serif',
-                    'color': '#A855F7',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#581c87',
-                    'text-outline-width': 1.5,
-                },
-            },
-            // Orthogonal Architectural Edges
-            {
-                selector: 'edge',
-                style: {
-                    'curve-style': 'taxi',
-                    'taxi-direction': 'vertical',
-                    'taxi-turn': '24px',
-                    'taxi-turn-min-distance': '12px',
-                    'width': 2,
-                    'line-color': isLightMode ? '#94A3B8' : '#475569',
-                    'target-arrow-color': isLightMode ? '#94A3B8' : '#475569',
-                    'target-arrow-shape': 'triangle',
-                    'arrow-scale': 1.15,
-                    'label': 'data(label)',
-                    'font-size': '8px',
-                    'color': isLightMode ? '#475569' : '#94a3b8',
-                    'text-outline-color': isLightMode ? '#ffffff' : '#0a0e1a',
-                    'text-outline-width': 2,
-                    'text-rotation': 'autorotate',
-                    'min-zoomed-font-size': 9,
-                },
-            },
-            // Ingress / HTTP Traffic Flow
-            {
-                selector: 'edge[edgeType="traffic"]',
-                style: {
-                    'line-color': '#38BDF8',
-                    'target-arrow-color': '#38BDF8',
-                    'width': 2.2,
-                },
-            },
-            // Outbound NAT / Internet Egress Flow
-            {
-                selector: 'edge[edgeType="egress"]',
-                style: {
-                    'line-style': 'dashed',
-                    'line-dash-pattern': [6, 4],
-                    'line-color': '#10B981',
-                    'target-arrow-color': '#10B981',
-                    'width': 2,
-                },
-            },
-            // Transit Gateway Attachment Backbone
-            {
-                selector: 'edge[edgeType="tgw_attachment"]',
-                style: {
-                    'line-color': '#8C4FFF',
-                    'target-arrow-color': '#8C4FFF',
-                    'width': 2.5,
-                },
-            },
-            // Gateway Connection
-            {
-                selector: 'edge[edgeType="gateway"]',
-                style: {
-                    'line-color': '#8C4FFF',
-                    'target-arrow-color': '#8C4FFF',
-                    'width': 2,
-                },
-            },
-            // Database Queries
-            {
-                selector: 'edge[edgeType="database"]',
-                style: {
-                    'line-color': '#3B82F6',
-                    'target-arrow-color': '#3B82F6',
-                    'width': 2,
-                },
-            },
-            // VPC Peering
-            {
-                selector: 'edge[edgeType="peering"]',
-                style: {
-                    'line-style': 'dashed',
-                    'line-dash-pattern': [6, 4],
-                    'line-color': '#F97316',
-                    'target-arrow-color': '#F97316',
-                    'width': 2,
-                },
-            },
-            // Node Selection & Highlight
-            {
-                selector: 'node:selected',
-                style: {
-                    'border-width': 2.5,
-                    'border-color': '#38BDF8',
-                    'border-opacity': 1,
-                    'border-style': 'solid',
-                },
-            },
-            {
-                selector: '.highlighted',
-                style: {
-                    'border-width': 2.5,
-                    'border-color': '#22d3ee',
-                    'border-opacity': 1,
-                    'border-style': 'solid',
-                    'z-index': 999,
-                },
-            },
-            {
-                selector: '.faded',
-                style: {
-                    'opacity': 0.18,
-                },
-            },
-        ],
-        layout: { name: 'preset' },
-        minZoom: 0.15,
-        maxZoom: 4,
-        wheelSensitivity: 0.3,
-    });
-
-    // Run deterministic AWS Architecture Landscape layout on load
-    runAwsLandscapeLayout(cy, false);
-
-    // Click handler for resource details
-    cy.on('tap', 'node', function(evt) {
-        const node = evt.target;
-        const details = node.data('details') || {};
-        const detailPanel = document.getElementById('topology-detail');
-        const detailTitle = document.getElementById('detail-title');
-        const detailContent = document.getElementById('detail-content');
-
-        detailTitle.textContent = node.data('fullLabel') || node.id();
-
-        let html = '';
-        const skip = new Set(['tags', 'region', 'account_id', '_account_id', '_account_alias', '_category',
-            'ingress_rules', 'egress_rules', 'routes', 'entries', 'associations', 'ebs_volumes',
-            'security_groups', 'instances', 'members', 'mount_targets', 'availability_zones',
-            'listeners', 'node_groups']);
-
-        for (const [key, value] of Object.entries(details)) {
-            if (skip.has(key)) continue;
-            if (value === null || value === undefined || value === '') continue;
-            const displayKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-            let displayVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
-            if (displayVal.length > 50) displayVal = displayVal.substring(0, 50) + '…';
-            html += `<div class="detail-row">
-                <span class="detail-key">${displayKey}</span>
-                <span class="detail-value">${displayVal}</span>
-            </div>`;
-        }
-
-        detailContent.innerHTML = html || '<p style="color: var(--text-muted);">No details available</p>';
-        detailPanel.classList.add('visible');
-
-        // Highlight neighborhood
-        cy.elements().removeClass('highlighted faded');
-        const neighborhood = node.neighborhood().add(node);
-        cy.elements().not(neighborhood).addClass('faded');
-        neighborhood.addClass('highlighted');
-    });
-
-    cy.on('tap', function(evt) {
-        if (evt.target === cy) {
-            document.getElementById('topology-detail').classList.remove('visible');
-            cy.elements().removeClass('highlighted faded');
-        }
-    });
-}
-
-// ── AWS Architecture Deterministic Landscape Layout ─────────────────
-function runAwsLandscapeLayout(cyInstance, animate = true) {
-    if (!cyInstance) return;
-
-    const allNodes = cyInstance.nodes();
-    const vpcNodes = allNodes.filter(n => n.data('nodeType') === 'vpc');
-    const ingressNodes = allNodes.filter(n => n.data('tier') === 'ingress');
-    const regionalNodes = allNodes.filter(n => n.data('tier') === 'regional');
-
-    const positions = {};
-    let currentVpcX = 100;
-    const COL_WIDTH = 150;
-    const TIER_Y = {
-        ingress: 75,
-        public: 240,
-        app: 430,
-        db: 620,
-        regional: 130
-    };
-
-    if (vpcNodes.length > 0) {
-        vpcNodes.forEach(vpcNode => {
-            const vpcId = vpcNode.id();
-            const childSubnets = allNodes.filter(n => n.data('parent') === vpcId && (n.data('nodeType') === 'subnet_public' || n.data('nodeType') === 'subnet_private'));
-
-            const pubSubnets = childSubnets.filter(s => s.data('tier') === 'public');
-            const appSubnets = childSubnets.filter(s => s.data('tier') === 'app');
-            const dbSubnets = childSubnets.filter(s => s.data('tier') === 'db');
-
-            function getLeaves(subs, tierName) {
-                const leaves = [];
-                subs.forEach(s => {
-                    const children = allNodes.filter(n => n.data('parent') === s.id());
-                    if (children.length > 0) {
-                        children.forEach(c => leaves.push(c));
-                    } else {
-                        // Empty subnet acts as leaf
-                        leaves.push(s);
-                    }
-                });
-                // Direct VPC children in this tier
-                allNodes.filter(n => n.data('parent') === vpcId && n.data('tier') === tierName && !childSubnets.contains(n)).forEach(c => {
-                    leaves.push(c);
-                });
-                return leaves;
-            }
-
-            const pubLeaves = getLeaves(pubSubnets, 'public');
-            const appLeaves = getLeaves(appSubnets, 'app');
-            const dbLeaves = getLeaves(dbSubnets, 'db');
-
-            const maxCols = Math.max(pubLeaves.length, appLeaves.length, dbLeaves.length, 2);
-            const vpcWidth = Math.max(maxCols * COL_WIDTH + 60, 480);
-            const vpcStartX = currentVpcX;
-
-            // Position public tier
-            pubLeaves.forEach((leaf, idx) => {
-                positions[leaf.id()] = {
-                    x: vpcStartX + 80 + idx * COL_WIDTH,
-                    y: TIER_Y.public,
-                };
-            });
-
-            // Position app tier
-            appLeaves.forEach((leaf, idx) => {
-                positions[leaf.id()] = {
-                    x: vpcStartX + 80 + idx * COL_WIDTH,
-                    y: TIER_Y.app,
-                };
-            });
-
-            // Position db tier
-            dbLeaves.forEach((leaf, idx) => {
-                positions[leaf.id()] = {
-                    x: vpcStartX + 80 + idx * COL_WIDTH,
-                    y: TIER_Y.db,
-                };
-            });
-
-            // If VPC has no children at all
-            if (pubLeaves.length === 0 && appLeaves.length === 0 && dbLeaves.length === 0) {
-                positions[vpcId] = { x: vpcStartX + 200, y: 350 };
-            }
-
-            currentVpcX += vpcWidth + 140;
-        });
-    } else {
-        currentVpcX = 280;
-    }
-
-    // Position Ingress Gateways (TGW, IGW, WAF, Firewalls, VPN)
-    const tgwNodes = ingressNodes.filter(n => n.data('nodeType') === 'transit_gateway');
-    const otherIngress = ingressNodes.filter(n => n.data('nodeType') !== 'transit_gateway');
-
-    // TGW centered at top
-    if (tgwNodes.length > 0) {
-        const midX = currentVpcX > 280 ? currentVpcX / 2 : 280;
-        positions[tgwNodes[0].id()] = { x: midX, y: 50 };
-    }
-
-    otherIngress.forEach((node, idx) => {
-        positions[node.id()] = {
-            x: 120 + idx * 160,
-            y: TIER_Y.ingress
-        };
-    });
-
-    // Position Regional Services in neat columns to the right of VPCs
-    const regionalStartX = currentVpcX;
-    const s3Nodes = regionalNodes.filter(n => n.data('nodeType') === 's3_bucket');
-    const dynamoNodes = regionalNodes.filter(n => n.data('nodeType') === 'dynamodb_table' || n.data('nodeType') === 'efs_file_system');
-    const secNodes = regionalNodes.filter(n => n.data('nodeType') === 'kms_key' || n.data('nodeType') === 'secrets_manager');
-    const mgmtNodes = regionalNodes.filter(n =>
-        n.data('nodeType') !== 's3_bucket' &&
-        n.data('nodeType') !== 'dynamodb_table' &&
-        n.data('nodeType') !== 'efs_file_system' &&
-        n.data('nodeType') !== 'kms_key' &&
-        n.data('nodeType') !== 'secrets_manager'
-    );
-
-    const regColumns = [s3Nodes, dynamoNodes, secNodes, mgmtNodes].filter(col => col.length > 0);
-    regColumns.forEach((colGroup, colIdx) => {
-        const colX = regionalStartX + colIdx * 140;
-        colGroup.forEach((node, rowIdx) => {
-            positions[node.id()] = {
-                x: colX,
-                y: TIER_Y.regional + rowIdx * 90
-            };
-        });
-    });
-
-    // Run preset layout
-    cyInstance.layout({
-        name: 'preset',
-        positions: positions,
-        animate: animate,
-        animationDuration: 600,
-        padding: 50,
-        fit: true
-    }).run();
-}
-
-function setLayout(name) {
-    if (!cy) return;
-    document.querySelectorAll('.topo-btn').forEach(b => b.classList.remove('active'));
-    if (event && event.target) {
-        event.target.classList.add('active');
-    }
-    if (name === 'aws-landscape') {
-        const btn = document.getElementById('btn-layout-aws');
-        if (btn) btn.classList.add('active');
-        runAwsLandscapeLayout(cy, true);
-        return;
-    }
-    const layoutOpts = {
-        name: name,
-        animate: true,
-        animationDuration: 600,
-        padding: 50,
-        nodeDimensionsIncludeLabels: true,
-    };
-    if (name === 'cose') {
-        layoutOpts.nodeRepulsion = function() { return 8000; };
-        layoutOpts.idealEdgeLength = function() { return 100; };
-    }
-    if (name === 'breadthfirst') {
-        layoutOpts.directed = true;
-        layoutOpts.spacingFactor = 1.3;
-    }
-    cy.layout(layoutOpts).run();
-}
-
-function resetTopoView() {
-    if (!cy) return;
-    document.querySelectorAll('.topo-btn').forEach(b => b.classList.remove('active'));
-    const btn = document.getElementById('btn-layout-aws');
-    if (btn) btn.classList.add('active');
-    runAwsLandscapeLayout(cy, true);
-}
-
-// Load first topology
-if (topoKeys.length > 0) {
-    initTopology(topoKeys[0]);
-}
-
-topoSelector.addEventListener('change', () => initTopology(topoSelector.value));
-
-// Topology search
-document.getElementById('topo-search').addEventListener('input', function() {
-    if (!cy) return;
-    const q = this.value.toLowerCase();
-    cy.elements().removeClass('highlighted faded');
-    if (!q) return;
-    const matches = cy.nodes().filter(n =>
-        (n.data('label') || '').toLowerCase().includes(q) ||
-        (n.data('fullLabel') || '').toLowerCase().includes(q) ||
-        (n.id() || '').toLowerCase().includes(q)
-    );
-    if (matches.length > 0) {
-        cy.elements().not(matches).addClass('faded');
-        matches.addClass('highlighted');
-        cy.animate({ fit: { eles: matches, padding: 60 } }, { duration: 400 });
-    }
-});
 
 // ══════════════════════════════════════════════════════════════════
 // SECURITY TAB
@@ -2319,7 +1339,7 @@ function renderSecurity() {
     SECURITY_DATA.forEach(item => {
         html += `
         <div class="card security-card">
-            <h3>🏢 ${item.account_alias} <span style="color:var(--text-muted);font-size:0.75rem;font-weight:400;">(${item.account_id})</span></h3>
+            <h3>🏢 ${esc(item.account_alias)} <span style="color:var(--text-muted);font-size:0.75rem;font-weight:400;">(${esc(item.account_id)})</span></h3>
             <div class="security-check">
                 <span class="check-label">GuardDuty Enabled</span>
                 <span class="check-status ${item.guardduty_enabled ? 'pass' : 'fail'}">${item.guardduty_enabled ? '✓ Enabled' : '✗ Not Found'}</span>
@@ -2353,6 +1373,114 @@ function renderSecurity() {
     grid.innerHTML = html;
 }
 renderSecurity();
+
+// ══════════════════════════════════════════════════════════════════
+// ARCHITECTURE DIAGRAM TAB
+// ══════════════════════════════════════════════════════════════════
+(function() {
+    const selector = document.getElementById('arch-selector');
+    const panels = document.querySelectorAll('.arch-panel');
+    if (!selector || panels.length === 0) return;
+
+    panels.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.dataset.account;
+        opt.textContent = p.dataset.account;
+        selector.appendChild(opt);
+    });
+
+    selector.addEventListener('change', () => {
+        panels.forEach(p => {
+            p.style.display = p.dataset.account === selector.value ? '' : 'none';
+        });
+    });
+})();
+
+function archFitView() {
+    const container = document.getElementById('arch-diagram-container');
+    const diagram = document.getElementById('arch-diagram');
+    if (!container || !diagram) return;
+    const svg = diagram.querySelector('.arch-panel:not([style*="display:none"]) svg, .arch-panel:not([style*="display: none"]) svg');
+    if (!svg) return;
+    const svgW = parseFloat(svg.getAttribute('width') || svg.viewBox.baseVal.width);
+    const containerW = container.clientWidth - 32;
+    const scale = Math.min(1, containerW / svgW);
+    diagram.style.transform = `scale(${scale})`;
+}
+
+function archDownloadSvg() {
+    const panel = document.querySelector('.arch-panel:not([style*="display:none"]), .arch-panel:not([style*="display: none"])');
+    if (!panel) return;
+    const svg = panel.querySelector('svg');
+    if (!svg) return;
+    const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'aws-architecture-diagram.svg';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// COVERAGE TAB
+// ══════════════════════════════════════════════════════════════════
+function renderCoverage() {
+    const container = document.getElementById('coverage-content');
+    if (!container) return;
+
+    if (!ISSUES || ISSUES.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">✅</div><p>No collection issues — all data collected successfully</p></div>';
+        return;
+    }
+
+    // Group by collector → region
+    const grouped = {};
+    ISSUES.forEach(issue => {
+        const key = issue.collector || 'unknown';
+        if (!grouped[key]) grouped[key] = {};
+        const rkey = issue.region || 'global';
+        if (!grouped[key][rkey]) grouped[key][rkey] = [];
+        grouped[key][rkey].push(issue);
+    });
+
+    const levelIcon = { error: '❌', denied: '🔒', unavailable: '⚠️' };
+    const levelClass = { error: 'fail', denied: 'warn', unavailable: '' };
+
+    let html = `<div class="card" style="margin-bottom: 1rem;">
+        <h3>Collection Issues Summary</h3>
+        <p style="color:var(--text-muted)">
+            ${esc(String(ISSUES.length))} issues:
+            ${esc(String(ISSUES.filter(i => i.level === 'error').length))} errors,
+            ${esc(String(ISSUES.filter(i => i.level === 'denied').length))} access denied,
+            ${esc(String(ISSUES.filter(i => i.level === 'unavailable').length))} unavailable
+        </p>
+    </div>`;
+
+    for (const [collector, regions] of Object.entries(grouped).sort()) {
+        html += `<div class="card" style="margin-bottom: 0.75rem;">
+            <h3 style="text-transform: capitalize;">📦 ${esc(collector)}</h3>`;
+        for (const [region, issues] of Object.entries(regions).sort()) {
+            html += `<div style="margin: 0.5rem 0; padding-left: 1rem;">
+                <strong style="color:var(--text-muted)">${esc(region)}</strong>
+                <div style="font-size: 0.8rem; margin-top: 0.25rem;">`;
+            issues.forEach(issue => {
+                const icon = levelIcon[issue.level] || '❓';
+                html += `<div style="padding: 0.2rem 0; display: flex; gap: 0.5rem; align-items: baseline;">
+                    <span>${icon}</span>
+                    <span style="color:var(--text-secondary)">${esc(issue.operation || '')}</span>
+                    <code style="font-size: 0.75rem; color:var(--accent-amber)">${esc(issue.code || '')}</code>
+                    <span style="color:var(--text-muted); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc((issue.message || '').substring(0, 120))}</span>
+                </div>`;
+            });
+            html += '</div></div>';
+        }
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+}
+renderCoverage();
 
 </script>
 </body>

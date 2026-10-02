@@ -58,6 +58,7 @@ class ScanConfig:
     max_workers_regions: int = 5
     max_workers_services: int = 10
     verbose: bool = False
+    report_title: str = ""
 
 
 def get_aws_config_path() -> Path:
@@ -133,20 +134,43 @@ def resolve_profiles(profile_names: str) -> list[ProfileConfig]:
     return resolved
 
 
-def resolve_regions(region_input: str) -> list[str]:
+def discover_enabled_regions(session) -> list[str]:
+    """
+    Discover enabled regions dynamically via ec2:DescribeRegions.
+
+    Falls back to the static ALL_REGIONS list if the API call fails.
+    """
+    try:
+        ec2 = session.client("ec2", region_name="us-east-1")
+        response = ec2.describe_regions(
+            Filters=[{"Name": "opt-in-status", "Values": ["opt-in-not-required", "opted-in"]}]
+        )
+        regions = sorted(r["RegionName"] for r in response.get("Regions", []))
+        if regions:
+            return regions
+    except Exception:
+        pass
+    return list(ALL_REGIONS)
+
+
+def resolve_regions(region_input: str, session=None) -> list[str]:
     """
     Resolve region input to a list of region strings.
 
     Args:
         region_input: Comma-separated region names, or 'all' for all regions.
+        session: Optional boto3 session for dynamic region discovery.
     """
     if region_input.strip().lower() == "all":
+        if session is not None:
+            return discover_enabled_regions(session)
         return ALL_REGIONS
 
+    all_valid = set(ALL_REGIONS)
     regions = [r.strip() for r in region_input.split(",") if r.strip()]
     valid = []
     for r in regions:
-        if r in ALL_REGIONS:
+        if r in all_valid:
             valid.append(r)
         else:
             console.print(f"[yellow]⚠️  Unknown region '{r}', skipping.[/yellow]")
