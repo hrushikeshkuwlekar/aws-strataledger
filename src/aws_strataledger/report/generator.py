@@ -2,61 +2,86 @@
 Report generator.
 
 Renders scan data into a self-contained HTML report using Jinja2.
+
+Security notes:
+- Jinja2 autoescape is ON (select_autoescape) to prevent XSS via resource names/tags.
+- JSON data embedded in <script> tags is escaped with a custom filter to prevent
+  script injection (``</script>`` inside a JSON string).
+- The template must not use ``|safe`` on user-controlled values.
+- _flatten_resources copies dicts so the caller's scan_data is not mutated.
 """
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
 from datetime import datetime
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 from rich.console import Console
+
+from ..diagram import build_diagram_model, compute_layout, render_svg
 
 console = Console()
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 
 
+def _script_safe_json(value: object) -> Markup:
+    """
+    Serialize ``value`` to JSON that is safe to embed in an HTML ``<script>`` tag.
+
+    Escapes ``</`` → ``<\\/`` and ``<!--`` → ``<\\!--`` so that a closing
+    ``</script>`` or HTML comment inside a string cannot break out of the script block.
+    """
+    raw = json.dumps(value, default=str)
+    safe = raw.replace("</", r"<\/").replace("<!--", r"<\!--")
+    return Markup(safe)
+
+
 def _flatten_resources(scan_data: dict) -> list[dict]:
     """
     Flatten all resources from all accounts/regions into a single list
     for the inventory table.
+
+    Returns shallow copies — the caller's ``scan_data`` is never mutated.
     """
-    resources = []
+    resources: list[dict] = []
     for account_id, account in scan_data.get("accounts", {}).items():
         alias = account.get("account_alias", account_id)
 
+        def _add(category: str, category_data: dict) -> None:
+            if not isinstance(category_data, dict):
+                return
+            for resource_type, resource_list in category_data.items():
+                if isinstance(resource_type, str) and resource_type.startswith("_"):
+                    continue  # metadata key
+                if isinstance(resource_list, list):
+                    for r in resource_list:
+                        row = dict(r)  # shallow copy
+                        row["_account_id"] = account_id
+                        row["_account_alias"] = alias
+                        row["_category"] = category
+                        resources.append(row)
+
         # Global resources
-        global_data = account.get("global", {})
-        for category, category_data in global_data.items():
-            if isinstance(category_data, dict):
-                for resource_type, resource_list in category_data.items():
-                    if isinstance(resource_list, list):
-                        for r in resource_list:
-                            r["_account_id"] = account_id
-                            r["_account_alias"] = alias
-                            r["_category"] = category
-                            resources.append(r)
+        for category, category_data in account.get("global", {}).items():
+            _add(category, category_data)
 
         # Regional resources
-        for region, region_data in account.get("regions", {}).items():
+        for _region, region_data in account.get("regions", {}).items():
             for category, category_data in region_data.items():
                 if category == "topology":
                     continue
-                if isinstance(category_data, dict):
-                    for resource_type, resource_list in category_data.items():
-                        if isinstance(resource_list, list):
-                            for r in resource_list:
-                                r["_account_id"] = account_id
-                                r["_account_alias"] = alias
-                                r["_category"] = category
-                                resources.append(r)
+                _add(category, category_data)
 
     return resources
 
 
 def _build_summary(scan_data: dict) -> dict:
     """Build summary statistics from scan data."""
-    summary = {
+    summary: dict = {
         "total_accounts": len(scan_data.get("accounts", {})),
         "total_regions": scan_data.get("scan_metadata", {}).get("regions_scanned", 0),
         "total_resources": scan_data.get("scan_metadata", {}).get("total_resources", 0),
@@ -65,10 +90,11 @@ def _build_summary(scan_data: dict) -> dict:
         "accounts": [],
         "resource_counts_by_type": {},
         "resource_counts_by_category": {},
+        "issue_summary": scan_data.get("scan_metadata", {}).get("issue_summary", {}),
     }
 
     for account_id, account in scan_data.get("accounts", {}).items():
-        account_summary = {
+        account_summary: dict = {
             "account_id": account_id,
             "account_alias": account.get("account_alias", account_id),
             "profile_name": account.get("profile_name", ""),
@@ -76,13 +102,14 @@ def _build_summary(scan_data: dict) -> dict:
             "resource_counts": {},
         }
 
-        # Count resources per type
-        def count_in(data):
+        def count_in(data: dict) -> None:
             for category, category_data in data.items():
                 if category == "topology":
                     continue
                 if isinstance(category_data, dict):
                     for resource_type, resource_list in category_data.items():
+                        if isinstance(resource_type, str) and resource_type.startswith("_"):
+                            continue
                         if isinstance(resource_list, list):
                             count = len(resource_list)
                             account_summary["resource_counts"][resource_type] = (
@@ -100,14 +127,14 @@ def _build_summary(scan_data: dict) -> dict:
             count_in(region_data)
 
         # Pre-computed metrics for summary table
-        account_summary["eks_clusters"] = account_summary["resource_counts"].get("eks_clusters", 0)
-        account_summary["subnets"] = account_summary["resource_counts"].get("subnets", 0)
-        account_summary["network_firewalls"] = account_summary["resource_counts"].get("network_firewalls", 0)
-        account_summary["waf_web_acls"] = account_summary["resource_counts"].get("waf_web_acls", 0)
-        # Dedicated AWS Network Firewalls count
-        account_summary["active_firewalls"] = account_summary["network_firewalls"]
+        rc = account_summary["resource_counts"]
+        account_summary["eks_clusters"] = rc.get("eks_clusters", 0)
+        account_summary["subnets"] = rc.get("subnets", 0)
+        account_summary["network_firewalls"] = rc.get("network_firewalls", 0)
+        account_summary["waf_web_acls"] = rc.get("waf_web_acls", 0)
+        account_summary["active_firewalls"] = rc.get("network_firewalls", 0)
         account_summary["total_firewalls"] = (
-            account_summary["network_firewalls"] + account_summary["waf_web_acls"]
+            rc.get("network_firewalls", 0) + rc.get("waf_web_acls", 0)
         )
 
         summary["accounts"].append(account_summary)
@@ -117,11 +144,11 @@ def _build_summary(scan_data: dict) -> dict:
 
 def _build_security_summary(scan_data: dict) -> list[dict]:
     """Build per-account security posture summary."""
-    security_items = []
+    security_items: list[dict] = []
 
     for account_id, account in scan_data.get("accounts", {}).items():
         alias = account.get("account_alias", account_id)
-        item = {
+        item: dict = {
             "account_id": account_id,
             "account_alias": alias,
             "guardduty_enabled": False,
@@ -135,26 +162,22 @@ def _build_security_summary(scan_data: dict) -> list[dict]:
         }
 
         # Check all regions for security services
-        for region, region_data in account.get("regions", {}).items():
+        for _region, region_data in account.get("regions", {}).items():
             sec = region_data.get("security", {})
 
-            # GuardDuty
             for detector in sec.get("guardduty_detectors", []):
                 if detector.get("status") == "ENABLED":
                     item["guardduty_enabled"] = True
 
-            # Security Hub
-            for hub in sec.get("security_hub", []):
+            for _hub in sec.get("security_hub", []):
                 item["security_hub_enabled"] = True
 
-            # CloudTrail
             for trail in sec.get("cloudtrail_trails", []):
                 if trail.get("is_logging"):
                     item["cloudtrail_logging"] = True
                 if trail.get("is_multi_region"):
                     item["cloudtrail_multi_region"] = True
 
-            # Config
             for recorder in sec.get("config_recorders", []):
                 if recorder.get("recording"):
                     item["config_recording"] = True
@@ -177,55 +200,72 @@ def _build_security_summary(scan_data: dict) -> list[dict]:
     return security_items
 
 
-def _collect_topologies(scan_data: dict) -> dict:
-    """Collect topology data per account-region."""
-    topologies = {}
+def _build_diagrams(scan_data: dict) -> dict[str, Markup]:
+    """
+    Build SVG architecture diagrams for each account.
+
+    Returns {account_label: Markup(svg_string)}.
+    SVG is wrapped in Markup so Jinja2 autoescape does not entity-escape it.
+    """
+    diagrams: dict[str, Markup] = {}
     for account_id, account in scan_data.get("accounts", {}).items():
         alias = account.get("account_alias", account_id)
-        for region, region_data in account.get("regions", {}).items():
-            topo = region_data.get("topology", {})
-            if topo and (topo.get("nodes") or topo.get("edges")):
-                key = f"{alias} ({account_id}) — {region}"
-                topologies[key] = topo
-    return topologies
+        try:
+            model = build_diagram_model(account_id, alias, account)
+            layout = compute_layout(model)
+            svg = render_svg(layout)
+            key = f"{alias} ({account_id})"
+            diagrams[key] = Markup(svg)
+        except Exception as e:
+            import logging
+            logging.getLogger("aws_strataledger").debug(
+                "Diagram build failed for %s: %s", account_id, e, exc_info=True,
+            )
+    return diagrams
 
 
-def generate_report(scan_data: dict, output_path: str) -> str:
+def generate_report(scan_data: dict, output_path: str, *, title: str = "") -> str:
     """
     Generate a self-contained HTML report from scan data.
 
     Args:
         scan_data: Full scan result dict
         output_path: Path for the output HTML file
+        title: Optional custom report title
 
     Returns:
         Path to the generated report
     """
     console.print("\n[bold]📊 Generating report...[/bold]")
 
-    # Prepare template data
+    # Prepare template data — does not mutate scan_data
     resources = _flatten_resources(scan_data)
     summary = _build_summary(scan_data)
     security = _build_security_summary(scan_data)
-    topologies = _collect_topologies(scan_data)
+    diagrams = _build_diagrams(scan_data)
 
-    # Load and render template
+    # Load and render template — autoescape ON for HTML safety
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
-        autoescape=False,
+        autoescape=select_autoescape(["html", "htm", "xml"]),
     )
+    env.filters["script_safe_json"] = _script_safe_json
+
     template = env.get_template("report.html")
 
     html = template.render(
         summary=summary,
         resources=resources,
         security=security,
-        topologies=topologies,
-        resources_json=json.dumps(resources, default=str),
-        topologies_json=json.dumps(topologies, default=str),
-        security_json=json.dumps(security, default=str),
-        summary_json=json.dumps(summary, default=str),
+        diagrams=diagrams,
+        resources_json=_script_safe_json(resources),
+        security_json=_script_safe_json(security),
+        summary_json=_script_safe_json(summary),
+        issues_json=_script_safe_json(
+            scan_data.get("scan_metadata", {}).get("issues", [])
+        ),
         generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        report_title=title,
     )
 
     output = Path(output_path)

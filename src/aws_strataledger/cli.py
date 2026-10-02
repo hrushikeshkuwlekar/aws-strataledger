@@ -8,6 +8,8 @@ Usage:
     aws-strataledger report --input scan-data.json --output report.html
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import sys
@@ -31,39 +33,35 @@ from .report.generator import generate_report
 console = Console()
 
 
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False) -> None:
     """
     Configure logging levels based on verbosity flag.
-    - verbose=False: completely suppresses all logs so discovery runs cleanly without line spam.
-    - verbose=True: prints detailed debug/warning/error logs with timestamps.
+
+    - verbose=False: suppress library noise, show only warnings+ from our own logger.
+    - verbose=True: detailed debug output with timestamps.
     """
+    root = logging.getLogger()
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
     if verbose:
-        logging.disable(logging.NOTSET)
         level = logging.DEBUG
-        format_str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-        root = logging.getLogger()
-        root.setLevel(level)
-        for h in root.handlers[:]:
-            root.removeHandler(h)
+        fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
         handler = logging.StreamHandler(sys.stderr)
         handler.setLevel(level)
-        handler.setFormatter(logging.Formatter(format_str, datefmt="%H:%M:%S"))
+        handler.setFormatter(logging.Formatter(fmt, datefmt="%H:%M:%S"))
+        root.setLevel(level)
         root.addHandler(handler)
-        for mod in ["botocore", "boto3", "urllib3", "requests", "s3transfer", "aws_strataledger"]:
-            logging.getLogger(mod).setLevel(logging.DEBUG)
+        # Let our logger be chatty; silence the libs a bit.
+        logging.getLogger("aws_strataledger").setLevel(logging.DEBUG)
+        for mod in ("botocore", "boto3", "urllib3", "requests", "s3transfer"):
+            logging.getLogger(mod).setLevel(logging.WARNING)
     else:
-        logging.disable(logging.CRITICAL)
-        root = logging.getLogger()
-        root.setLevel(logging.CRITICAL)
-        for h in root.handlers[:]:
-            root.removeHandler(h)
+        root.setLevel(logging.WARNING)
         root.addHandler(logging.NullHandler())
-        for mod in ["botocore", "boto3", "urllib3", "requests", "s3transfer", "aws_strataledger"]:
+        logging.getLogger("aws_strataledger").setLevel(logging.WARNING)
+        for mod in ("botocore", "boto3", "urllib3", "requests", "s3transfer"):
             logging.getLogger(mod).setLevel(logging.CRITICAL)
-
-
-# Initialize logging immediately on module import to ensure clean discovery by default
-setup_logging(False)
 
 
 @click.group()
@@ -91,12 +89,21 @@ def main(ctx, verbose):
 @click.option(
     "--services", "-s",
     default=None,
-    help="Comma-separated service categories to scan (e.g., compute,networking,storage). Default: all.",
+    help=(
+        "Comma-separated service categories or AWS service names to scan. "
+        "Categories: compute, networking, storage, identity, security, monitoring. "
+        "Service aliases: ec2, lambda, vpc, rds, s3, iam, etc. Default: all."
+    ),
 )
 @click.option(
     "--output", "-o",
     default="./reports",
     help="Output directory for scan data and reports. Default: ./reports",
+)
+@click.option(
+    "--title",
+    default="",
+    help="Custom title for the generated report.",
 )
 @click.option(
     "--verbose", "-v",
@@ -105,7 +112,7 @@ def main(ctx, verbose):
     help="Enable verbose/debug logging during discovery",
 )
 @click.pass_context
-def scan(ctx, profiles, regions, services, output, verbose):
+def scan(ctx, profiles, regions, services, output, title, verbose):
     """Run a multi-account, multi-region inventory scan."""
     is_verbose = verbose or (ctx.obj and ctx.obj.get("verbose", False))
     setup_logging(is_verbose)
@@ -115,7 +122,16 @@ def scan(ctx, profiles, regions, services, output, verbose):
         console.print("[red]❌ No valid profiles to scan. Aborting.[/red]")
         sys.exit(1)
 
-    resolved_regions = resolve_regions(regions)
+    # Use first profile's session for dynamic region discovery
+    import boto3
+    discovery_session = None
+    if regions.strip().lower() == "all":
+        try:
+            discovery_session = boto3.Session(profile_name=resolved_profiles[0].profile_name)
+        except Exception:
+            pass
+
+    resolved_regions = resolve_regions(regions, session=discovery_session)
     if not resolved_regions:
         console.print("[red]❌ No valid regions to scan. Aborting.[/red]")
         sys.exit(1)
@@ -128,6 +144,7 @@ def scan(ctx, profiles, regions, services, output, verbose):
         services=resolved_services,
         output_dir=output,
         verbose=is_verbose,
+        report_title=title,
     )
 
     # Run scan
@@ -141,7 +158,7 @@ def scan(ctx, profiles, regions, services, output, verbose):
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     report_path = str(Path(output) / f"report-{timestamp}.html")
-    generate_report(scan_data, report_path)
+    generate_report(scan_data, report_path, title=config.report_title)
 
 
 @main.command()
@@ -176,7 +193,8 @@ def profiles():
 @main.command()
 @click.option("--input", "-i", required=True, help="Path to scan JSON file.")
 @click.option("--output", "-o", required=True, help="Path for output HTML report.")
-def report(input, output):
+@click.option("--title", default="", help="Custom title for the report.")
+def report(input, output, title):
     """Generate an HTML report from an existing scan JSON file."""
     input_path = Path(input)
     if not input_path.exists():
@@ -188,7 +206,7 @@ def report(input, output):
     with open(input_path) as f:
         scan_data = json.load(f)
 
-    generate_report(scan_data, output)
+    generate_report(scan_data, output, title=title)
 
 
 if __name__ == "__main__":

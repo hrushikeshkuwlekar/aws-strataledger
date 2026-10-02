@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-10-03
+
+### 🏗️ Server-Side Architecture Diagrams (Replaces Cytoscape)
+- **Pure SVG Diagram Engine**: Replaced client-side Cytoscape.js with a deterministic server-side SVG renderer (`diagram/` package). Diagrams are generated at report time, not in the browser.
+  - `model.py` — transforms scan inventory into a structured diagram model with containers (Cloud → Region → VPC → AZ → Subnet), nodes, groups, edges, and tiles.
+  - `layout.py` — deterministic geometry engine computing positions following AWS architecture conventions (left-to-right request flow, top-to-bottom stacking).
+  - `svg.py` — renders LayoutResult as self-contained SVG with dark/light theme support via CSS custom properties.
+  - `icons.py` — AWS 2023 palette with simplified SVG icon paths for all resource types.
+- **Route-Table-Based Subnet Tier Classification**: Subnets classified by their effective route table destination (IGW → public, NAT/TGW → app, local-only → data), with tag override via `strataledger:tier`.
+- **Removed Cytoscape.js & Topology Tab**: Eliminated ~800 lines of Cytoscape JS code and the Topology tab. The Architecture tab now shows the server-side SVG diagrams.
+
+### 🔒 Security Hardening
+- **Jinja2 Autoescape ON**: All user-controlled strings are HTML-escaped by default.
+- **Script-Safe JSON**: `_script_safe_json()` escapes `</script>` and `<!--` inside embedded JSON to prevent script injection.
+- **XSS-Safe innerHTML**: Client-side `esc()` helper used for all dynamic HTML interpolation.
+- **Air-Gapped Reports**: Removed all CDN URLs (Cytoscape, Google Fonts). System font stack, inline SVG.
+
+### ⚡ Scan Engine Improvements
+- **Thread-Safe ClientFactory**: `ClientFactory` serializes boto3 client creation behind a lock; clients are shared across worker threads.
+- **Adaptive Retry**: botocore adaptive retry mode (`max_attempts=10`) handles throttling automatically.
+- **Structured Issue Recording**: Every collector failure is classified (error/denied/unavailable) and surfaced in the Coverage tab.
+- **Parallel Region Scanning**: Regions scanned concurrently via `ThreadPoolExecutor`.
+- **Account De-duplication**: Multiple profiles pointing to the same account are detected and skipped.
+- **CloudTrail De-duplication**: Multi-region shadow trails removed by ARN.
+- **Dynamic Region Discovery**: `--regions all` now queries `ec2:DescribeRegions` for the account's enabled regions.
+- **Service Alias Mapping**: `--services ec2,s3,iam` correctly resolves to collector categories.
+
+### 📊 Report Enhancements
+- **Status Filter**: Inventory tab now has a Status dropdown filter.
+- **Enhanced CSV Export**: Exported CSV includes ARN, Account ID columns.
+- **Custom Report Title**: `--title` flag on `scan` and `report` commands sets the HTML `<title>`.
+- **Coverage Tab**: Grouped issue display by collector and region with level indicators.
+- **SVG Diagram Bug Fix**: SVG output is now wrapped in `Markup` so Jinja2 autoescape doesn't entity-escape diagram tags.
+
+### 🧪 Quality
+- **pytest Test Suite**: 74 unit tests covering diagram model, layout, report generation, XSS prevention, collector helpers, scanner utilities, and CLI.
+- **GitHub Actions CI**: Matrix testing (Python 3.9/3.11/3.12) with ruff lint and pytest on push/PR.
+
+### 🔧 Collectors
+- All collectors rewritten with ClientFactory, pagination, and issue recording.
+- S3 public access: account-level + bucket-level Block Public Access + policy + ACL.
+- KMS key rotation status via separate API call.
+- ECS, ElastiCache, OpenSearch, Redshift, ECR replication, DynamoDB replicas.
+- ELBv2 with target health, Classic ELB, API Gateway REST/HTTP, Network Firewall, WAF regional.
+
 ## [1.0.3] - 2026-10-02
 
 ### 🔇 Quiet Discovery by Default & Verbose-Only Logging Control
