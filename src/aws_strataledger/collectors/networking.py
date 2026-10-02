@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Networking & Connectivity collectors.
 
@@ -32,6 +34,7 @@ class NetworkingCollector(BaseCollector):
         results["transit_gateways"] = self._collect_transit_gateways()
         results["transit_gateway_attachments"] = self._collect_tgw_attachments()
         results["transit_gateway_route_tables"] = self._collect_tgw_route_tables()
+        results["transit_gateway_peerings"] = self._collect_tgw_peerings()
 
         # Peering & VPN
         results["vpc_peering_connections"] = self._collect_vpc_peering()
@@ -297,6 +300,7 @@ class NetworkingCollector(BaseCollector):
                 "subnet_ids": ep.get("SubnetIds", []),
                 "network_interface_ids": ep.get("NetworkInterfaceIds", []),
                 "route_table_ids": ep.get("RouteTableIds", []),
+                "security_group_ids": [g.get("GroupId") for g in ep.get("Groups", [])],
                 "tags": self._extract_tags(ep),
                 "region": self.region,
                 "account_id": self.account_id,
@@ -373,6 +377,34 @@ class NetworkingCollector(BaseCollector):
             for rt in rts
         ]
 
+    def _collect_tgw_peerings(self) -> list[dict]:
+        ec2 = self._get_client("ec2")
+        peerings = self._safe_paginate(
+            ec2, "describe_transit_gateway_peering_attachments", "TransitGatewayPeeringAttachments"
+        )
+        results = []
+        for p in peerings:
+            if p.get("State") in ("deleted", "deleting", "failed", "rejected"):
+                continue
+            req = p.get("RequesterTgwInfo") or {}
+            acc = p.get("AccepterTgwInfo") or {}
+            results.append({
+                "resource_type": "transit_gateway_peering",
+                "resource_id": p["TransitGatewayAttachmentId"],
+                "name": self._get_name_tag(p),
+                "state": p.get("State"),
+                "requester_tgw": req.get("TransitGatewayId"),
+                "requester_region": req.get("Region"),
+                "requester_owner": req.get("OwnerId"),
+                "accepter_tgw": acc.get("TransitGatewayId"),
+                "accepter_region": acc.get("Region"),
+                "accepter_owner": acc.get("OwnerId"),
+                "tags": self._extract_tags(p),
+                "region": self.region,
+                "account_id": self.account_id,
+            })
+        return results
+
     # ── VPC Peering ──────────────────────────────────────────────────
 
     def _collect_vpc_peering(self) -> list[dict]:
@@ -389,9 +421,11 @@ class NetworkingCollector(BaseCollector):
                 "requester_vpc": p.get("RequesterVpcInfo", {}).get("VpcId"),
                 "requester_cidr": p.get("RequesterVpcInfo", {}).get("CidrBlock"),
                 "requester_owner": p.get("RequesterVpcInfo", {}).get("OwnerId"),
+                "requester_region": p.get("RequesterVpcInfo", {}).get("Region"),
                 "accepter_vpc": p.get("AccepterVpcInfo", {}).get("VpcId"),
                 "accepter_cidr": p.get("AccepterVpcInfo", {}).get("CidrBlock"),
                 "accepter_owner": p.get("AccepterVpcInfo", {}).get("OwnerId"),
+                "accepter_region": p.get("AccepterVpcInfo", {}).get("Region"),
                 "tags": self._extract_tags(p),
                 "region": self.region,
                 "account_id": self.account_id,
@@ -510,60 +544,49 @@ class NetworkingCollector(BaseCollector):
     def _collect_elbv2(self) -> list[dict]:
         elbv2 = self._get_client("elbv2")
         lbs = self._safe_paginate(elbv2, "describe_load_balancers", "LoadBalancers")
-        results = []
-        for lb in lbs:
-            # Get listeners
-            listeners = self._safe_call(
-                lambda arn=lb["LoadBalancerArn"]: elbv2.describe_listeners(
-                    LoadBalancerArn=arn
-                ).get("Listeners", []),
-                default=[],
-            )
-            results.append({
+
+        def describe(lb: dict) -> dict:
+            arn = lb["LoadBalancerArn"]
+            listeners = self._safe_paginate(elbv2, "describe_listeners", "Listeners", LoadBalancerArn=arn)
+            return {
                 "resource_type": "load_balancer_v2",
-                "resource_id": lb["LoadBalancerArn"],
+                "resource_id": arn,
                 "name": lb.get("LoadBalancerName", ""),
-                "dns_name": lb.get("DNSName", ""),
+                "dns_name": (lb.get("DNSName", "") or "").lower(),
                 "type": lb.get("Type"),
                 "scheme": lb.get("Scheme"),
                 "state": lb.get("State", {}).get("Code"),
                 "vpc_id": lb.get("VpcId"),
                 "availability_zones": [
-                    {
-                        "zone": az.get("ZoneName"),
-                        "subnet_id": az.get("SubnetId"),
-                    }
+                    {"zone": az.get("ZoneName"), "subnet_id": az.get("SubnetId")}
                     for az in lb.get("AvailabilityZones", [])
                 ],
+                "subnet_ids": [az.get("SubnetId") for az in lb.get("AvailabilityZones", []) if az.get("SubnetId")],
                 "security_groups": lb.get("SecurityGroups", []),
                 "ip_address_type": lb.get("IpAddressType"),
                 "listeners": [
-                    {
-                        "port": l.get("Port"),
-                        "protocol": l.get("Protocol"),
-                    }
-                    for l in (listeners or [])
+                    {"port": l.get("Port"), "protocol": l.get("Protocol")}
+                    for l in listeners
                 ],
                 "region": self.region,
                 "account_id": self.account_id,
-            })
-        return results
+            }
+
+        return self._parallel(describe, lbs)
 
     def _collect_elb_classic(self) -> list[dict]:
         elb = self._get_client("elb")
-        lbs = self._safe_paginate(
-            elb, "describe_load_balancers", "LoadBalancerDescriptions"
-        )
+        lbs = self._safe_paginate(elb, "describe_load_balancers", "LoadBalancerDescriptions")
         return [
             {
                 "resource_type": "load_balancer_classic",
                 "resource_id": lb["LoadBalancerName"],
                 "name": lb["LoadBalancerName"],
-                "dns_name": lb.get("DNSName", ""),
+                "dns_name": (lb.get("DNSName", "") or "").lower(),
                 "scheme": lb.get("Scheme"),
                 "vpc_id": lb.get("VPCId"),
                 "availability_zones": lb.get("AvailabilityZones", []),
-                "subnets": lb.get("Subnets", []),
+                "subnet_ids": lb.get("Subnets", []),
                 "security_groups": lb.get("SecurityGroups", []),
                 "instances": [i["InstanceId"] for i in lb.get("Instances", [])],
                 "listeners": [
@@ -583,10 +606,16 @@ class NetworkingCollector(BaseCollector):
     def _collect_target_groups(self) -> list[dict]:
         elbv2 = self._get_client("elbv2")
         tgs = self._safe_paginate(elbv2, "describe_target_groups", "TargetGroups")
-        return [
-            {
+
+        def describe(tg: dict) -> dict:
+            arn = tg["TargetGroupArn"]
+            health = self._safe_call(
+                lambda: elbv2.describe_target_health(TargetGroupArn=arn).get("TargetHealthDescriptions", []),
+                default=[],
+            ) or []
+            return {
                 "resource_type": "target_group",
-                "resource_id": tg["TargetGroupArn"],
+                "resource_id": arn,
                 "name": tg.get("TargetGroupName", ""),
                 "protocol": tg.get("Protocol"),
                 "port": tg.get("Port"),
@@ -594,11 +623,19 @@ class NetworkingCollector(BaseCollector):
                 "vpc_id": tg.get("VpcId"),
                 "health_check_path": tg.get("HealthCheckPath"),
                 "load_balancer_arns": tg.get("LoadBalancerArns", []),
+                "targets": [
+                    {
+                        "id": t.get("Target", {}).get("Id"),
+                        "port": t.get("Target", {}).get("Port"),
+                        "state": t.get("TargetHealth", {}).get("State"),
+                    }
+                    for t in health
+                ],
                 "region": self.region,
                 "account_id": self.account_id,
             }
-            for tg in tgs
-        ]
+
+        return self._parallel(describe, tgs)
 
     # ── API Gateway ──────────────────────────────────────────────────
 
@@ -612,6 +649,7 @@ class NetworkingCollector(BaseCollector):
                 "name": api.get("name", ""),
                 "description": api.get("description", ""),
                 "endpoint_configuration": api.get("endpointConfiguration", {}),
+                "endpoint_types": (api.get("endpointConfiguration") or {}).get("types", []),
                 "created_date": str(api.get("createdDate", "")),
                 "tags": api.get("tags", {}),
                 "region": self.region,
@@ -622,17 +660,14 @@ class NetworkingCollector(BaseCollector):
 
     def _collect_apigw_http(self) -> list[dict]:
         apigwv2 = self._get_client("apigatewayv2")
-        apis = self._safe_call(
-            lambda: apigwv2.get_apis().get("Items", []),
-            default=[],
-        )
+        apis = self._safe_paginate_tokens(apigwv2, "get_apis", "Items", token_in="NextToken")
         return [
             {
                 "resource_type": "api_gateway_http",
                 "resource_id": api["ApiId"],
                 "name": api.get("Name", ""),
                 "protocol_type": api.get("ProtocolType"),
-                "api_endpoint": api.get("ApiEndpoint", ""),
+                "api_endpoint": (api.get("ApiEndpoint", "") or "").lower(),
                 "created_date": str(api.get("CreatedDate", "")),
                 "tags": api.get("Tags", {}),
                 "region": self.region,
@@ -645,23 +680,14 @@ class NetworkingCollector(BaseCollector):
 
     def _collect_network_firewalls(self) -> list[dict]:
         nfw = self._get_client("network-firewall")
-        # Paginate to ensure all firewalls across all pages are collected
         firewalls = self._safe_paginate(nfw, "list_firewalls", "Firewalls")
-        if not firewalls:
-            # Fallback if paginator not available
-            firewalls = self._safe_call(
-                lambda: nfw.list_firewalls().get("Firewalls", []),
-                default=[],
-            )
 
-        results = []
-        for fw_summary in (firewalls or []):
+        def describe(fw_summary: dict) -> dict | None:
             fw_name = fw_summary.get("FirewallName", "")
             fw_arn = fw_summary.get("FirewallArn", "")
             if not fw_name and not fw_arn:
-                continue
+                return None
 
-            # Fetch detailed firewall definition via ARN (exact) or Name
             fw_detail = {}
             if fw_arn:
                 fw_detail = self._safe_call(nfw.describe_firewall, default={}, FirewallArn=fw_arn)
@@ -671,26 +697,21 @@ class NetworkingCollector(BaseCollector):
             fw = (fw_detail or {}).get("Firewall", {})
             fw_status = (fw_detail or {}).get("FirewallStatus", {})
 
-            # Exact status: 'PROVISIONING' | 'DELETING' | 'READY'
             raw_status = fw_status.get("Status")
-            if raw_status:
-                status = raw_status
-            elif fw_detail:
-                status = "READY"
-            else:
-                status = "ACTIVE"
+            status = raw_status or ("READY" if fw_detail else "ACTIVE")
 
-            # Extract VPC Endpoint IDs deployed for each Availability Zone
             endpoint_ids = []
-            sync_states = fw_status.get("SyncStates", {})
-            for sync in sync_states.values():
+            subnet_to_endpoint = {}
+            for az, sync in (fw_status.get("SyncStates") or {}).items():
                 if isinstance(sync, dict):
                     att = sync.get("Attachment", {})
                     ep_id = att.get("EndpointId")
                     if ep_id:
                         endpoint_ids.append(ep_id)
+                        if att.get("SubnetId"):
+                            subnet_to_endpoint[att["SubnetId"]] = ep_id
 
-            results.append({
+            return {
                 "resource_type": "network_firewall",
                 "resource_id": fw.get("FirewallArn") or fw_arn,
                 "name": fw.get("FirewallName") or fw_name,
@@ -700,6 +721,7 @@ class NetworkingCollector(BaseCollector):
                 "subnet_mappings": [
                     s.get("SubnetId") for s in fw.get("SubnetMappings", []) if s.get("SubnetId")
                 ],
+                "subnet_to_endpoint": subnet_to_endpoint,
                 "firewall_policy_arn": fw.get("FirewallPolicyArn"),
                 "endpoint_ids": endpoint_ids,
                 "delete_protection": fw.get("DeleteProtection", False),
@@ -708,27 +730,35 @@ class NetworkingCollector(BaseCollector):
                 "tags": self._extract_tags(fw),
                 "region": self.region,
                 "account_id": self.account_id,
-            })
-        return results
+            }
 
-    # ── WAF ──────────────────────────────────────────────────────────
+        return [f for f in self._parallel(describe, firewalls, max_workers=4) if f]
+
+    # ── WAF (Regional scope) ─────────────────────────────────────────
 
     def _collect_waf_regional(self) -> list[dict]:
         wafv2 = self._get_client("wafv2")
-        acls = self._safe_call(
-            lambda: wafv2.list_web_acls(Scope="REGIONAL").get("WebACLs", []),
-            default=[],
+        acls = self._safe_paginate_tokens(
+            wafv2, "list_web_acls", "WebACLs", token_in="NextMarker",
+            Scope="REGIONAL",
         )
-        return [
-            {
+
+        def describe(acl: dict) -> dict:
+            arn = acl.get("ARN", acl.get("Id", ""))
+            resources = self._safe_call(
+                lambda: wafv2.list_resources_for_web_acl(WebACLArn=arn).get("ResourceArns", []),
+                default=[],
+            ) or []
+            return {
                 "resource_type": "waf_web_acl",
-                "resource_id": acl.get("ARN", acl.get("Id", "")),
+                "resource_id": arn,
                 "name": acl.get("Name", ""),
                 "status": "ACTIVE",
                 "scope": "REGIONAL",
-                "lock_token": acl.get("LockToken", ""),
+                "description": acl.get("Description", ""),
+                "associated_resources": resources,
                 "region": self.region,
                 "account_id": self.account_id,
             }
-            for acl in acls
-        ]
+
+        return self._parallel(describe, acls)
