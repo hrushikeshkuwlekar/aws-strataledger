@@ -1193,7 +1193,8 @@ def _build_edges(model: DiagramModel, account_data: dict) -> None:
         # Cross-region replication between service tiles
         for table in (region_data.get("storage", {}) or {}).get("dynamodb_tables", []):
             for replica in table.get("replica_regions", []):
-                if replica != region_name:
+                # Global tables list every replica in every region: draw one line per region pair.
+                if replica != region_name and (replica not in regions_data or region_name < replica):
                     edges.append(DiagramEdge(f"tile:{region_name}:DynamoDB", f"tile:{replica}:DynamoDB",
                                              "replication", "global table"))
         for dest in compute.get("_ecr_replication", []):

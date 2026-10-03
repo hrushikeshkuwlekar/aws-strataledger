@@ -19,6 +19,9 @@ from io import StringIO
 from .icons import CATEGORY_COLOURS, CONTAINER_STYLES, EDGE_STYLES, INK, INK_SOFT, icon_key, symbol
 from .layout import LayoutContainer, LayoutEdge, LayoutGroup, LayoutLabel, LayoutNode, LayoutResult, LayoutTile
 
+# Longest label that fits an icon cell with a gap to its neighbour; full text is in the tooltip.
+CELL_LABEL_CHARS = 15
+
 FONT = "'Amazon Ember', 'Helvetica Neue', Roboto, Arial, sans-serif"
 
 STYLE = f"""
@@ -99,9 +102,9 @@ def render_svg(layout: LayoutResult, embed_defs: bool = True) -> str:
 
     for g in layout.groups:
         for m in g.members:
-            _node(buf, m, max_label=17)
+            _node(buf, m, max_label=CELL_LABEL_CHARS)
     for n in layout.nodes:
-        _node(buf, n, max_label=17)
+        _node(buf, n, max_label=CELL_LABEL_CHARS)
     for n in layout.global_nodes + layout.external_nodes:
         _node(buf, n, max_label=22)
 
@@ -259,7 +262,7 @@ def _node(buf: StringIO, n: LayoutNode, max_label: int) -> None:
         buf.write(f'<text class="sl-label" x="{r.cx:.1f}" y="{r.bottom + 13:.1f}">{_esc(_fit(n.label, max_label))}</text>')
     if n.sublabel:
         buf.write(f'<text class="sl-small" x="{r.cx:.1f}" y="{r.bottom + 25:.1f}">'
-                  f'{_esc(_fit(n.sublabel, max_label + 1))}</text>')
+                  f'{_esc(_fit(n.sublabel, max_label + 2))}</text>')
     if n.attachments:
         mini = 14
         shown = n.attachments[:4]
