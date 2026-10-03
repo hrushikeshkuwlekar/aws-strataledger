@@ -1,4 +1,4 @@
-from aws_strataledger.diagram.layout import LayoutResult, compute_layout
+from aws_strataledger.diagram.layout import MAX_ICONS_PER_SUBNET, LayoutResult, compute_layout
 from aws_strataledger.diagram.model import build_diagram_model
 from aws_strataledger.diagram.svg import render_svg
 
@@ -66,7 +66,7 @@ def test_overflow_chip(account_data):
     ]
     res = _layout(account_data)
     chips = [n for n in res.nodes if n.id.startswith("overflow:")]
-    assert [c.label for c in chips] == ["+3 more"]
+    assert [c.label for c in chips] == [f"+{11 - MAX_ICONS_PER_SUBNET} more"]
 
 
 def test_render_svg_smoke(account_data):

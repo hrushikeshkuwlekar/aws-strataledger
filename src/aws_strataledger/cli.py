@@ -91,8 +91,10 @@ def main(ctx, verbose):
     default=None,
     help=(
         "Comma-separated service categories or AWS service names to scan. "
-        "Categories: compute, networking, storage, identity, security, monitoring. "
-        "Service aliases: ec2, lambda, vpc, rds, s3, iam, etc. Default: all."
+        "Categories: compute, networking, storage, identity, security, monitoring, "
+        "integration, analytics, edge. "
+        "Service aliases: ec2, eks, rds, s3, iam, elasticache, dynamodb, msk, sqs, sns, "
+        "kinesis, cloudfront, etc. Default: all."
     ),
 )
 @click.option(

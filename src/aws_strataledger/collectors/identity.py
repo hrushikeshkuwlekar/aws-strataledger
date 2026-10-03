@@ -149,7 +149,24 @@ class IdentityCollector(BaseCollector):
         results["secrets"] = self._collect_secrets()
         results["ssm_parameters"] = self._collect_ssm_parameters()
         results["acm_certificates"] = self._collect_acm_certs()
+        results["cognito_user_pools"] = self._collect_cognito()
         return results
+
+    def _collect_cognito(self) -> list[dict]:
+        idp = self._get_client("cognito-idp")
+        pools = self._safe_paginate(idp, "list_user_pools", "UserPools", MaxResults=60)
+        return [
+            {
+                "resource_type": "cognito_user_pool",
+                "resource_id": p.get("Id", ""),
+                "name": p.get("Name", ""),
+                "status": p.get("Status"),
+                "create_time": str(p.get("CreationDate", "")),
+                "region": self.region,
+                "account_id": self.account_id,
+            }
+            for p in pools
+        ]
 
     def _collect_access_analyzers(self) -> list[dict]:
         aa = self._get_client("accessanalyzer")

@@ -3,7 +3,8 @@ from __future__ import annotations
 """
 Storage & Database collectors.
 
-Covers: S3, EBS, EFS, RDS/Aurora, DynamoDB, ElastiCache, OpenSearch,
+Covers: S3, EBS, EFS, FSx, RDS/Aurora (incl. DocumentDB/Neptune engines),
+        DynamoDB, ElastiCache (incl. Serverless), MemoryDB, OpenSearch,
         Redshift, Backup
 """
 
@@ -36,6 +37,7 @@ class StorageCollector(BaseCollector):
         results["ebs_volumes"] = self._collect_ebs_volumes()
         results["ebs_snapshots"] = self._collect_ebs_snapshots()
         results["efs_file_systems"] = self._collect_efs()
+        results["fsx_file_systems"] = self._collect_fsx()
 
         # Relational
         results["rds_instances"] = self._collect_rds_instances()
@@ -47,6 +49,8 @@ class StorageCollector(BaseCollector):
         cache_groups, cache_clusters = self._collect_elasticache()
         results["elasticache_replication_groups"] = cache_groups
         results["elasticache_clusters"] = cache_clusters
+        results["elasticache_serverless_caches"] = self._collect_elasticache_serverless()
+        results["memorydb_clusters"] = self._collect_memorydb()
         results["opensearch_domains"] = self._collect_opensearch()
         results["redshift_clusters"] = self._collect_redshift()
 
@@ -151,6 +155,29 @@ class StorageCollector(BaseCollector):
             }
 
         return self._parallel(describe, file_systems)
+
+    def _collect_fsx(self) -> list[dict]:
+        fsx = self._get_client("fsx")
+        file_systems = self._safe_paginate(fsx, "describe_file_systems", "FileSystems")
+        return [
+            {
+                "resource_type": "fsx_file_system",
+                "resource_id": fs.get("ResourceARN") or fs.get("FileSystemId", ""),
+                "file_system_id": fs.get("FileSystemId", ""),
+                "name": self._get_name_tag(fs) or fs.get("FileSystemId", ""),
+                "file_system_type": fs.get("FileSystemType"),
+                "storage_capacity_gb": fs.get("StorageCapacity"),
+                "storage_type": fs.get("StorageType"),
+                "lifecycle": fs.get("Lifecycle"),
+                "vpc_id": fs.get("VpcId"),
+                "subnet_ids": fs.get("SubnetIds", []),
+                "dns_name": (fs.get("DNSName") or "").lower(),
+                "tags": self._extract_tags(fs),
+                "region": self.region,
+                "account_id": self.account_id,
+            }
+            for fs in file_systems
+        ]
 
     # ── RDS / Aurora ─────────────────────────────────────────────────
 
@@ -355,6 +382,54 @@ class StorageCollector(BaseCollector):
             for g in raw_groups
         ]
         return groups, clusters
+
+    def _collect_elasticache_serverless(self) -> list[dict]:
+        ec = self._get_client("elasticache")
+        caches = self._safe_paginate(ec, "describe_serverless_caches", "ServerlessCaches")
+        return [
+            {
+                "resource_type": "elasticache_serverless_cache",
+                "resource_id": c.get("ARN") or c.get("ServerlessCacheName", ""),
+                "name": c.get("ServerlessCacheName", ""),
+                "engine": c.get("Engine"),
+                "engine_version": c.get("FullEngineVersion") or c.get("MajorEngineVersion"),
+                "status": c.get("Status"),
+                "subnet_ids": c.get("SubnetIds", []),
+                "security_groups": c.get("SecurityGroupIds", []),
+                "endpoint": ((c.get("Endpoint") or {}).get("Address") or "").lower(),
+                "region": self.region,
+                "account_id": self.account_id,
+            }
+            for c in caches
+        ]
+
+    def _collect_memorydb(self) -> list[dict]:
+        mdb = self._get_client("memorydb")
+        clusters = self._safe_paginate(mdb, "describe_clusters", "Clusters")
+        if not clusters:
+            return []
+        subnet_groups = {
+            g.get("Name"): g
+            for g in self._safe_paginate(mdb, "describe_subnet_groups", "SubnetGroups")
+        }
+        results = []
+        for c in clusters:
+            group = subnet_groups.get(c.get("SubnetGroupName")) or {}
+            results.append({
+                "resource_type": "memorydb_cluster",
+                "resource_id": c.get("ARN") or c.get("Name", ""),
+                "name": c.get("Name", ""),
+                "status": c.get("Status"),
+                "engine_version": c.get("EngineVersion"),
+                "node_type": c.get("NodeType"),
+                "shards": c.get("NumberOfShards"),
+                "vpc_id": group.get("VpcId"),
+                "subnet_ids": [s.get("Identifier") for s in group.get("Subnets", []) if s.get("Identifier")],
+                "endpoint": ((c.get("ClusterEndpoint") or {}).get("Address") or "").lower(),
+                "region": self.region,
+                "account_id": self.account_id,
+            })
+        return results
 
     # ── OpenSearch ───────────────────────────────────────────────────
 

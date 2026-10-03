@@ -3,7 +3,7 @@ from __future__ import annotations
 """
 Compute & Container Platform collectors.
 
-Covers: EC2, Auto Scaling, EKS, ECS, ECR, Lambda
+Covers: EC2, Auto Scaling, EKS, ECS, ECR, Lambda (incl. event sources), Elastic Beanstalk
 """
 
 from .base import BaseCollector, chunks
@@ -41,6 +41,10 @@ class ComputeCollector(BaseCollector):
         # Lambda
         results["lambda_functions"] = self._collect_lambda_functions()
         results["lambda_layers"] = self._collect_lambda_layers()
+        results["_lambda_event_sources"] = self._collect_lambda_event_sources()
+
+        # Elastic Beanstalk
+        results["beanstalk_environments"] = self._collect_beanstalk()
 
         return results
 
@@ -384,6 +388,40 @@ class ComputeCollector(BaseCollector):
                 "account_id": self.account_id,
             }
             for fn in functions
+        ]
+
+    def _collect_lambda_event_sources(self) -> list[dict]:
+        """SQS / Kinesis / DynamoDB / MSK → Lambda wiring (metadata, not inventory)."""
+        lam = self._get_client("lambda")
+        mappings = self._safe_paginate(lam, "list_event_source_mappings", "EventSourceMappings")
+        return [
+            {
+                "event_source_arn": m.get("EventSourceArn", ""),
+                "function_arn": m.get("FunctionArn", ""),
+                "state": m.get("State"),
+            }
+            for m in mappings
+            if m.get("EventSourceArn")
+        ]
+
+    def _collect_beanstalk(self) -> list[dict]:
+        eb = self._get_client("elasticbeanstalk")
+        envs = self._safe_paginate(eb, "describe_environments", "Environments", IncludeDeleted=False)
+        return [
+            {
+                "resource_type": "beanstalk_environment",
+                "resource_id": e.get("EnvironmentArn") or e.get("EnvironmentId", ""),
+                "name": e.get("EnvironmentName", ""),
+                "application": e.get("ApplicationName", ""),
+                "platform": e.get("SolutionStackName") or e.get("PlatformArn", ""),
+                "status": e.get("Status"),
+                "health": e.get("Health"),
+                "tier": (e.get("Tier") or {}).get("Name"),
+                "cname": (e.get("CNAME") or "").lower(),
+                "region": self.region,
+                "account_id": self.account_id,
+            }
+            for e in envs
         ]
 
     def _collect_lambda_layers(self) -> list[dict]:

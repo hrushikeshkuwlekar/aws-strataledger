@@ -704,6 +704,34 @@
             .summary-grid { grid-template-columns: repeat(2, 1fr); }
             .header-meta { display: none; }
         }
+
+        /* ── Architecture viewer ───────────────────────────────────── */
+        .arch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .arch-toolbar .spacer { flex: 1; }
+        .toolbar-btn {
+            background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);
+            border-radius: 6px; padding: 6px 11px; font-size: 12px; font-weight: 600; cursor: pointer;
+            transition: var(--transition);
+        }
+        .toolbar-btn:hover { border-color: var(--border-accent); color: var(--accent-blue); }
+        .arch-search {
+            background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-subtle);
+            border-radius: 6px; padding: 7px 10px; font-size: 12px; width: 220px;
+        }
+        .arch-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+        .arch-zoom { min-width: 46px; text-align: center; font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+        .arch-viewport {
+            position: relative; height: calc(100vh - 250px); min-height: 480px; overflow: hidden;
+            background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+            cursor: grab; touch-action: none; user-select: none;
+        }
+        .arch-viewport.dragging { cursor: grabbing; }
+        .arch-canvas { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+        .arch-canvas svg { display: block; background: #fff; border-radius: 4px; box-shadow: var(--shadow-md); }
+        .arch-hint { position: absolute; right: 12px; bottom: 8px; font-size: 11px; color: var(--text-muted); pointer-events: none; }
+        .arch-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--text-secondary); }
+        .arch-legend i { display: inline-block; width: 24px; border-top: 2px solid; vertical-align: middle; margin-right: 6px; }
+        .arch-legend i.dash { border-top-style: dashed; }
     </style>
 </head>
 <body>
@@ -900,27 +928,43 @@
      ARCHITECTURE DIAGRAM TAB
      ══════════════════════════════════════════════════════════════════ -->
 <section class="tab-content" id="tab-architecture">
-    <div class="filters-bar">
+    <div class="arch-toolbar">
         <div class="filter-group">
             <label>Account</label>
             <select id="arch-selector"></select>
         </div>
-        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
-            <button class="toolbar-btn" onclick="archFitView()" title="Fit to view">Fit</button>
-            <button class="toolbar-btn" onclick="archDownloadSvg()" title="Download SVG">⬇ SVG</button>
-        </div>
+        <input id="arch-search" class="arch-search" type="search" placeholder="Find a resource…" aria-label="Find a resource">
+        <label class="arch-check"><input type="checkbox" id="arch-edges" checked> Connections</label>
+        <span class="spacer"></span>
+        <button class="toolbar-btn" onclick="archZoom(1 / 1.25)" title="Zoom out">−</button>
+        <span class="arch-zoom" id="arch-zoom">100%</span>
+        <button class="toolbar-btn" onclick="archZoom(1.25)" title="Zoom in">+</button>
+        <button class="toolbar-btn" onclick="archFitWidth()" title="Fit to width">Width</button>
+        <button class="toolbar-btn" onclick="archFitView()" title="Fit whole diagram">Fit</button>
+        <button class="toolbar-btn" onclick="archActualSize()" title="Actual size">1:1</button>
+        <button class="toolbar-btn" onclick="archDownloadSvg()" title="Download SVG">⬇ SVG</button>
+        <button class="toolbar-btn" onclick="archDownloadPng()" title="Download PNG">⬇ PNG</button>
     </div>
-    <div id="arch-diagram-container" style="width: 100%; overflow: auto; background: var(--bg-primary); border-radius: 8px; min-height: 400px; position: relative;">
-        <div id="arch-diagram" style="padding: 16px; transform-origin: 0 0;">
+    {{ diagram_defs }}
+    <div class="arch-viewport" id="arch-viewport">
+        <div class="arch-canvas" id="arch-canvas">
             {% for key, svg in diagrams.items() %}
             <div class="arch-panel" data-account="{{ key }}" {% if not loop.first %}style="display:none"{% endif %}>
                 {{ svg }}
             </div>
             {% endfor %}
-            {% if not diagrams %}
-            <div class="empty-state"><p>No architecture diagram available — scan inventory first</p></div>
-            {% endif %}
         </div>
+        {% if not diagrams %}
+        <div class="empty-state"><p>No architecture diagram available — scan inventory first</p></div>
+        {% endif %}
+        <div class="arch-hint">Scroll to zoom · drag to pan · hover any icon for details</div>
+    </div>
+    <div class="arch-legend">
+        <span><i style="border-color:#232F3E"></i>Request traffic</span>
+        <span><i style="border-color:#8C4FFF"></i>Network (TGW, VPN, peering)</span>
+        <span><i class="dash" style="border-color:#DD344C"></i>WAF protection</span>
+        <span><i class="dash" style="border-color:#E7157B"></i>Cross-region replication</span>
+        <span><i class="dash" style="border-color:#ED7100"></i>Auto Scaling group</span>
     </div>
 </section>
 
@@ -1085,6 +1129,30 @@ const CATEGORY_META = {
         border: 'rgba(251, 113, 133, 0.5)',
         glow: 'rgba(251, 113, 133, 0.22)',
         bg: 'rgba(251, 113, 133, 0.12)'
+    },
+    integration: {
+        icon: '🔀',
+        label: 'Application Integration',
+        gradient: 'linear-gradient(135deg, #be185d, #ec4899)',
+        border: 'rgba(236, 72, 153, 0.5)',
+        glow: 'rgba(236, 72, 153, 0.22)',
+        bg: 'rgba(236, 72, 153, 0.12)'
+    },
+    analytics: {
+        icon: '📊',
+        label: 'Analytics & Streaming',
+        gradient: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
+        border: 'rgba(167, 139, 250, 0.5)',
+        glow: 'rgba(167, 139, 250, 0.22)',
+        bg: 'rgba(167, 139, 250, 0.12)'
+    },
+    edge: {
+        icon: '🌍',
+        label: 'Edge (CloudFront, Global Accelerator)',
+        gradient: 'linear-gradient(135deg, #4f46e5, #818cf8)',
+        border: 'rgba(129, 140, 248, 0.5)',
+        glow: 'rgba(129, 140, 248, 0.22)',
+        bg: 'rgba(129, 140, 248, 0.12)'
     },
     route53: {
         icon: '🚦',
@@ -1375,12 +1443,62 @@ function renderSecurity() {
 renderSecurity();
 
 // ══════════════════════════════════════════════════════════════════
-// ARCHITECTURE DIAGRAM TAB
+// ARCHITECTURE DIAGRAM TAB — pan / zoom / search / export
 // ══════════════════════════════════════════════════════════════════
-(function() {
+const arch = { scale: 1, x: 16, y: 16, fitted: false };
+
+function archPanel() {
+    return [...document.querySelectorAll('.arch-panel')].find(p => p.style.display !== 'none') || null;
+}
+function archSvg() { const p = archPanel(); return p ? p.querySelector('svg') : null; }
+function archSize(svg) {
+    return { w: parseFloat(svg.getAttribute('width')), h: parseFloat(svg.getAttribute('height')) };
+}
+function archApply() {
+    const canvas = document.getElementById('arch-canvas');
+    if (!canvas) return;
+    canvas.style.transform = `translate(${arch.x}px, ${arch.y}px) scale(${arch.scale})`;
+    const z = document.getElementById('arch-zoom');
+    if (z) z.textContent = Math.round(arch.scale * 100) + '%';
+}
+function archFitView() {
+    const vp = document.getElementById('arch-viewport'), svg = archSvg();
+    if (!vp || !svg || !vp.clientWidth) return;
+    const { w, h } = archSize(svg);
+    arch.scale = Math.min((vp.clientWidth - 32) / w, (vp.clientHeight - 32) / h, 1);
+    arch.x = (vp.clientWidth - w * arch.scale) / 2;
+    arch.y = 16;
+    arch.fitted = true;
+    archApply();
+}
+function archFitWidth() {
+    const vp = document.getElementById('arch-viewport'), svg = archSvg();
+    if (!vp || !svg || !vp.clientWidth) return;
+    const { w } = archSize(svg);
+    arch.scale = Math.min((vp.clientWidth - 32) / w, 1);
+    arch.x = (vp.clientWidth - w * arch.scale) / 2;
+    arch.y = 16;
+    arch.fitted = true;
+    archApply();
+}
+function archActualSize() { arch.scale = 1; arch.x = 16; arch.y = 16; archApply(); }
+function archZoom(factor, cx, cy) {
+    const vp = document.getElementById('arch-viewport');
+    if (!vp) return;
+    if (cx === undefined) { cx = vp.clientWidth / 2; cy = vp.clientHeight / 2; }
+    const next = Math.min(4, Math.max(0.05, arch.scale * factor));
+    const k = next / arch.scale;
+    arch.x = cx - (cx - arch.x) * k;
+    arch.y = cy - (cy - arch.y) * k;
+    arch.scale = next;
+    archApply();
+}
+
+(function initArchitecture() {
     const selector = document.getElementById('arch-selector');
+    const vp = document.getElementById('arch-viewport');
     const panels = document.querySelectorAll('.arch-panel');
-    if (!selector || panels.length === 0) return;
+    if (!selector || !vp || panels.length === 0) return;
 
     panels.forEach(p => {
         const opt = document.createElement('option');
@@ -1388,38 +1506,123 @@ renderSecurity();
         opt.textContent = p.dataset.account;
         selector.appendChild(opt);
     });
-
     selector.addEventListener('change', () => {
-        panels.forEach(p => {
-            p.style.display = p.dataset.account === selector.value ? '' : 'none';
-        });
+        panels.forEach(p => { p.style.display = p.dataset.account === selector.value ? '' : 'none'; });
+        archSearch(document.getElementById('arch-search').value);
+        archFitWidth();
     });
+
+    vp.addEventListener('wheel', e => {
+        e.preventDefault();
+        const r = vp.getBoundingClientRect();
+        archZoom(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    vp.addEventListener('dblclick', e => {
+        const r = vp.getBoundingClientRect();
+        archZoom(1.6, e.clientX - r.left, e.clientY - r.top);
+    });
+    let drag = null;
+    vp.addEventListener('pointerdown', e => {
+        if (e.button !== 0) return;
+        drag = { x: e.clientX, y: e.clientY, ox: arch.x, oy: arch.y };
+        vp.classList.add('dragging');
+        vp.setPointerCapture(e.pointerId);
+    });
+    vp.addEventListener('pointermove', e => {
+        if (!drag) return;
+        arch.x = drag.ox + e.clientX - drag.x;
+        arch.y = drag.oy + e.clientY - drag.y;
+        archApply();
+    });
+    const endDrag = () => { drag = null; vp.classList.remove('dragging'); };
+    vp.addEventListener('pointerup', endDrag);
+    vp.addEventListener('pointercancel', endDrag);
+
+    document.getElementById('arch-edges').addEventListener('change', e => {
+        document.querySelectorAll('.arch-panel .sl-edges').forEach(g => { g.style.display = e.target.checked ? '' : 'none'; });
+    });
+    let timer = null;
+    document.getElementById('arch-search').addEventListener('input', e => {
+        clearTimeout(timer);
+        timer = setTimeout(() => archSearch(e.target.value), 150);
+    });
+
+    const tab = document.querySelector('.nav-tab[data-tab="architecture"]');
+    if (tab) tab.addEventListener('click', () => requestAnimationFrame(() => { if (!arch.fitted) archFitWidth(); }));
+    if (document.getElementById('tab-architecture').classList.contains('active')) archFitWidth();
+    archApply();
 })();
 
-function archFitView() {
-    const container = document.getElementById('arch-diagram-container');
-    const diagram = document.getElementById('arch-diagram');
-    if (!container || !diagram) return;
-    const svg = diagram.querySelector('.arch-panel:not([style*="display:none"]) svg, .arch-panel:not([style*="display: none"]) svg');
+function archSearch(query) {
+    const svg = archSvg();
     if (!svg) return;
-    const svgW = parseFloat(svg.getAttribute('width') || svg.viewBox.baseVal.width);
-    const containerW = container.clientWidth - 32;
-    const scale = Math.min(1, containerW / svgW);
-    diagram.style.transform = `scale(${scale})`;
+    const q = (query || '').trim().toLowerCase();
+    const items = svg.querySelectorAll('.sl-item');
+    let first = null;
+    items.forEach(el => {
+        const hit = q && (el.dataset.name || '').includes(q);
+        el.classList.toggle('sl-hit', !!hit);
+        el.classList.toggle('sl-dim', !!q && !hit);
+        if (hit && !first) first = el;
+    });
+    if (first) {
+        const vp = document.getElementById('arch-viewport');
+        const b = first.getBBox();
+        arch.scale = Math.max(arch.scale, 0.8);
+        arch.x = vp.clientWidth / 2 - (b.x + b.width / 2) * arch.scale;
+        arch.y = vp.clientHeight / 2 - (b.y + b.height / 2) * arch.scale;
+        archApply();
+    }
 }
 
-function archDownloadSvg() {
-    const panel = document.querySelector('.arch-panel:not([style*="display:none"]), .arch-panel:not([style*="display: none"])');
-    if (!panel) return;
-    const svg = panel.querySelector('svg');
-    if (!svg) return;
-    const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+function archStandaloneSvg() {
+    const svg = archSvg();
+    if (!svg) return null;
+    const clone = svg.cloneNode(true);
+    clone.querySelectorAll('.sl-dim, .sl-hit').forEach(el => el.classList.remove('sl-dim', 'sl-hit'));
+    const shared = document.getElementById('sl-defs');
+    if (shared) {
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const refs = new Set([...clone.querySelectorAll('use')].map(u => u.getAttribute('href')));
+        shared.querySelectorAll('marker').forEach(m => defs.appendChild(m.cloneNode(true)));
+        refs.forEach(ref => { const sym = shared.querySelector(ref); if (sym) defs.appendChild(sym.cloneNode(true)); });
+        clone.insertBefore(defs, clone.firstChild);
+    }
+    return new XMLSerializer().serializeToString(clone);
+}
+function archFileName(ext) {
+    const p = archPanel();
+    const name = (p ? p.dataset.account : 'account').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-|-$/g, '');
+    return `aws-architecture-${name}.${ext}`;
+}
+function archDownload(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'aws-architecture-diagram.svg';
+    a.download = filename;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function archDownloadSvg() {
+    const str = archStandaloneSvg();
+    if (str) archDownload(new Blob([str], { type: 'image/svg+xml' }), archFileName('svg'));
+}
+function archDownloadPng() {
+    const str = archStandaloneSvg(), svg = archSvg();
+    if (!str) return;
+    const { w, h } = archSize(svg);
+    const scale = Math.min(2, Math.sqrt(16e6 / (w * h)));  // stay under browser canvas limits
+    const img = new Image();
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(w * scale);
+        canvas.height = Math.round(h * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(b => archDownload(b, archFileName('png')), 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(str);
 }
 
 // ══════════════════════════════════════════════════════════════════

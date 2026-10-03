@@ -14,6 +14,7 @@ Security notes:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -21,7 +22,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from rich.console import Console
 
-from ..diagram import build_diagram_model, compute_layout, render_svg
+from ..diagram import build_diagram_model, compute_layout, render_svg, shared_defs_svg, used_icon_keys
 
 console = Console()
 
@@ -200,28 +201,26 @@ def _build_security_summary(scan_data: dict) -> list[dict]:
     return security_items
 
 
-def _build_diagrams(scan_data: dict) -> dict[str, Markup]:
+def _build_diagrams(scan_data: dict) -> tuple[dict[str, Markup], Markup]:
     """
     Build SVG architecture diagrams for each account.
 
-    Returns {account_label: Markup(svg_string)}.
+    Returns ({account_label: Markup(svg)}, Markup(shared_defs_svg)). Icons and
+    arrow markers are emitted once for the whole page instead of per account.
     SVG is wrapped in Markup so Jinja2 autoescape does not entity-escape it.
     """
     diagrams: dict[str, Markup] = {}
+    keys: set[str] = set()
     for account_id, account in scan_data.get("accounts", {}).items():
         alias = account.get("account_alias", account_id)
         try:
-            model = build_diagram_model(account_id, alias, account)
-            layout = compute_layout(model)
-            svg = render_svg(layout)
-            key = f"{alias} ({account_id})"
-            diagrams[key] = Markup(svg)
-        except Exception as e:
-            import logging
-            logging.getLogger("aws_strataledger").debug(
-                "Diagram build failed for %s: %s", account_id, e, exc_info=True,
-            )
-    return diagrams
+            layout = compute_layout(build_diagram_model(account_id, alias, account))
+            keys |= used_icon_keys(layout)
+            diagrams[f"{alias} ({account_id})"] = Markup(render_svg(layout, embed_defs=False))
+        except Exception as e:  # noqa: BLE001 — one bad account must not break the report
+            logging.getLogger("aws_strataledger").debug("Diagram build failed for %s", account_id, exc_info=True)
+            console.print(f"[yellow]⚠️  Architecture diagram skipped for {alias} ({account_id}): {e}[/yellow]")
+    return diagrams, Markup(shared_defs_svg(keys)) if diagrams else Markup("")
 
 
 def generate_report(scan_data: dict, output_path: str, *, title: str = "") -> str:
@@ -242,7 +241,7 @@ def generate_report(scan_data: dict, output_path: str, *, title: str = "") -> st
     resources = _flatten_resources(scan_data)
     summary = _build_summary(scan_data)
     security = _build_security_summary(scan_data)
-    diagrams = _build_diagrams(scan_data)
+    diagrams, diagram_defs = _build_diagrams(scan_data)
 
     # Load and render template — autoescape ON for HTML safety
     env = Environment(
@@ -258,6 +257,7 @@ def generate_report(scan_data: dict, output_path: str, *, title: str = "") -> st
         resources=resources,
         security=security,
         diagrams=diagrams,
+        diagram_defs=diagram_defs,
         resources_json=_script_safe_json(resources),
         security_json=_script_safe_json(security),
         summary_json=_script_safe_json(summary),

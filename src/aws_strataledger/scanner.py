@@ -21,7 +21,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.table import Table
 
 from . import __version__
-from .config import ScanConfig, ProfileConfig, GLOBAL_SERVICES
+from .config import ScanConfig, ProfileConfig
 from .session import SessionManager, AccountInfo, ClientFactory
 from .collectors.compute import ComputeCollector
 from .collectors.networking import NetworkingCollector
@@ -29,6 +29,9 @@ from .collectors.storage import StorageCollector, S3Collector
 from .collectors.identity import IAMCollector, IdentityCollector
 from .collectors.security import SecurityCollector, Route53Collector, OrganizationsCollector
 from .collectors.monitoring import MonitoringCollector
+from .collectors.integration import IntegrationCollector
+from .collectors.analytics import AnalyticsCollector
+from .collectors.edge import EdgeCollector
 
 logger = logging.getLogger("aws_strataledger")
 console = Console()
@@ -41,6 +44,8 @@ REGIONAL_COLLECTORS = [
     ("identity", IdentityCollector),
     ("security", SecurityCollector),
     ("monitoring", MonitoringCollector),
+    ("integration", IntegrationCollector),
+    ("analytics", AnalyticsCollector),
 ]
 
 GLOBAL_COLLECTORS = [
@@ -48,6 +53,7 @@ GLOBAL_COLLECTORS = [
     ("iam", IAMCollector),
     ("route53", Route53Collector),
     ("organizations", OrganizationsCollector),
+    ("edge", EdgeCollector),
 ]
 
 # Maps user-facing service aliases to collector keys so that
@@ -59,15 +65,20 @@ SERVICE_ALIAS_MAP: dict[str, str] = {
     "eks": "compute",
     "ecr": "compute",
     "autoscaling": "compute",
+    "beanstalk": "compute",
+    "elasticbeanstalk": "compute",
     "vpc": "networking",
     "elb": "networking",
     "elbv2": "networking",
     "apigateway": "networking",
-    "cloudfront": "networking",
+    "cloudfront": "edge",
+    "globalaccelerator": "edge",
     "s3": "storage",
     "rds": "storage",
     "dynamodb": "storage",
     "elasticache": "storage",
+    "memorydb": "storage",
+    "fsx": "storage",
     "opensearch": "storage",
     "redshift": "storage",
     "efs": "storage",
@@ -77,6 +88,7 @@ SERVICE_ALIAS_MAP: dict[str, str] = {
     "secretsmanager": "identity",
     "ssm": "identity",
     "acm": "identity",
+    "cognito": "identity",
     "guardduty": "security",
     "inspector": "security",
     "securityhub": "security",
@@ -84,8 +96,17 @@ SERVICE_ALIAS_MAP: dict[str, str] = {
     "cloudtrail": "security",
     "macie": "security",
     "cloudwatch": "monitoring",
-    "sns": "monitoring",
-    "sqs": "monitoring",
+    "eventbridge": "monitoring",
+    "sns": "integration",
+    "sqs": "integration",
+    "stepfunctions": "integration",
+    "sfn": "integration",
+    "mq": "integration",
+    "kinesis": "analytics",
+    "firehose": "analytics",
+    "msk": "analytics",
+    "kafka": "analytics",
+    "emr": "analytics",
 }
 
 
@@ -156,7 +177,7 @@ def scan_region(
             continue
         collectors_to_run.append((key, cls))
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=len(REGIONAL_COLLECTORS)) as executor:
         futures = {}
         for key, cls in collectors_to_run:
             future = executor.submit(_run_collector, cls, clients, region, account_id)
