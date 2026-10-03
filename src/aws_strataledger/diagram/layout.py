@@ -95,6 +95,16 @@ class LayoutNode:
 
 
 @dataclass
+class LayoutMember:
+    """A member node rendered inside a group."""
+    id: str
+    rect: Rect
+    resource_type: str
+    label: str
+    sublabel: str = ""
+
+
+@dataclass
 class LayoutGroup:
     """A positioned multi-AZ group."""
     id: str
@@ -102,6 +112,7 @@ class LayoutGroup:
     label: str
     category: str
     sublabel: str = ""
+    members: list[LayoutMember] = field(default_factory=list)
 
 
 @dataclass
@@ -403,12 +414,41 @@ def _layout_vpc(
                     gx2 = max(gx2, c.rect.right)
                     gy2 = max(gy2, c.rect.bottom)
         if gx1 < float("inf"):
+            margin = 6
+            gr = Rect(gx1 - margin, gy1 - margin, gx2 - gx1 + margin * 2, gy2 - gy1 + margin * 2)
+
+            # Position member nodes inside the group
+            layout_members: list[LayoutMember] = []
+            if group.members:
+                member_y = gr.y + HEADER_H + 4
+                member_x = gr.x + 10
+                for mid in group.members:
+                    node_data = model.all_nodes.get(mid)
+                    if not node_data:
+                        continue
+                    layout_members.append(LayoutMember(
+                        id=mid,
+                        rect=Rect(member_x, member_y, ICON_SIZE, ICON_SIZE),
+                        resource_type=node_data.resource_type,
+                        label=node_data.label,
+                        sublabel=node_data.sublabel,
+                    ))
+                    member_x += ICON_SIZE + ICON_GAP + 60
+                # Expand group rect to fit members
+                members_bottom = member_y + ICON_SIZE + LABEL_H + 8
+                if members_bottom > gr.bottom:
+                    gr.h = members_bottom - gr.y
+                members_right = member_x
+                if members_right > gr.right:
+                    gr.w = members_right - gr.x
+
             result.groups.append(LayoutGroup(
                 id=group.id,
-                rect=Rect(gx1 - 4, gy1 - 4, gx2 - gx1 + 8, gy2 - gy1 + 8),
+                rect=gr,
                 label=group.label,
                 category=group.category,
                 sublabel=group.sublabel,
+                members=layout_members,
             ))
 
     # Endpoint column (right edge of VPC)
