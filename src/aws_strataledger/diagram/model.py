@@ -677,27 +677,26 @@ def _place_ecs_services(model: DiagramModel, region: RegionModel, compute: dict,
 
 
 def _place_eks_clusters(model: DiagramModel, region: RegionModel, compute: dict, subnet_map: dict) -> None:
-    """Place EKS clusters as groups spanning their node group subnets, with node group nodes."""
+    """Place EKS clusters as groups with node groups rendered inside."""
     for cluster in compute.get("eks_clusters", []):
         all_subnets: set[str] = set()
         node_groups = cluster.get("node_groups", [])
+        member_nodes: list[str] = []
 
-        # Place individual node group nodes in their subnets
         for ng in node_groups:
             ng_subnets = ng.get("subnet_ids", [])
             all_subnets.update(ng_subnets)
-            if ng_subnets:
-                scaling = ng.get("scaling", {})
-                desired = scaling.get("desiredSize", scaling.get("desired_size", "?"))
-                node = DiagramNode(
-                    id=_node_id("eks_nodegroup", ng.get("name", "")),
-                    resource_type="eks_nodegroup",
-                    label=_safe_label(ng.get("name", "")),
-                    container_id=ng_subnets[0],
-                    sublabel=f"{ng.get('capacity_type', '')} ×{desired}",
-                )
-                model.all_nodes[node.id] = node
-                _add_to_subnet(region, ng_subnets[0], node.id)
+            scaling = ng.get("scaling", {})
+            desired = scaling.get("desiredSize", scaling.get("desired_size", "?"))
+            node = DiagramNode(
+                id=_node_id("eks_nodegroup", ng.get("name", "")),
+                resource_type="eks_nodegroup",
+                label=_safe_label(ng.get("name", "")),
+                container_id="group",
+                sublabel=f"{ng.get('capacity_type', '')} ×{desired}",
+            )
+            model.all_nodes[node.id] = node
+            member_nodes.append(node.id)
 
         if not all_subnets:
             all_subnets = set(cluster.get("subnet_ids", []))
@@ -709,6 +708,7 @@ def _place_eks_clusters(model: DiagramModel, region: RegionModel, compute: dict,
             label=_safe_label(cluster.get("name", "")),
             category="compute",
             subnet_ids=list(all_subnets),
+            members=member_nodes,
             sublabel=f"EKS {cluster.get('version', '')}",
         )
         _add_group_to_vpc(region, list(all_subnets), group)

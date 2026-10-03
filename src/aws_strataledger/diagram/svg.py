@@ -14,7 +14,7 @@ from io import StringIO
 from .icons import ICONS, CONTAINER_STYLES, EDGE_STYLES, get_icon
 from .layout import (
     LayoutResult, LayoutContainer, LayoutNode, LayoutGroup,
-    LayoutEdge, LayoutTile,
+    LayoutEdge, LayoutTile, LayoutMember,
 )
 
 
@@ -198,7 +198,7 @@ def _draw_node(buf: StringIO, n: LayoutNode) -> None:
 
 
 def _draw_group(buf: StringIO, g: LayoutGroup) -> None:
-    """Draw a multi-AZ group with a dashed border."""
+    """Draw a multi-AZ group with a dashed border and member icons."""
     style_key = f"group_{g.category}"
     style = CONTAINER_STYLES.get(style_key, CONTAINER_STYLES["group_compute"])
     r = g.rect
@@ -215,6 +215,26 @@ def _draw_group(buf: StringIO, g: LayoutGroup) -> None:
         buf.write(f'<text x="{lx}" y="{ly}" class="group-label" '
                   f'fill="{style["stroke"]}">{_esc(g.label)}'
                   f'{" · " + _esc(g.sublabel) if g.sublabel else ""}</text>\n')
+
+    # Member nodes inside the group
+    for m in g.members:
+        _draw_member(buf, m, style["stroke"])
+
+
+def _draw_member(buf: StringIO, m: LayoutMember, group_colour: str) -> None:
+    """Draw a member icon with label inside a group."""
+    r = m.rect
+    buf.write(f'<rect x="{r.x - 2}" y="{r.y - 2}" width="{r.w + 4}" height="{r.h + 4}" '
+              f'rx="4" fill="var(--diagram-node-bg)" stroke="{group_colour}" '
+              f'stroke-width="0.5" opacity="0.8"/>\n')
+    buf.write(f'<use href="#icon-{_esc_attr(m.resource_type)}" '
+              f'x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}"/>\n')
+    if m.label:
+        buf.write(f'<text x="{r.cx}" y="{r.bottom + 11}" class="node-label" '
+                  f'fill="var(--diagram-text-label)">{_esc(m.label)}</text>\n')
+    if m.sublabel:
+        buf.write(f'<text x="{r.cx}" y="{r.bottom + 20}" class="node-sublabel" '
+                  f'fill="var(--diagram-text-muted)">{_esc(m.sublabel)}</text>\n')
 
 
 def _draw_tile(buf: StringIO, t: LayoutTile) -> None:
