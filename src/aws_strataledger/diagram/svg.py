@@ -71,7 +71,11 @@ def render_svg(layout: LayoutResult, theme: str = "dark") -> str:
     for e in layout.edges:
         _draw_edge(buf, e)
 
-    # ── Nodes (icons with labels) ───────────────────────────────────
+    # ── Group children, then nodes (icons with labels) ──────────────
+    for g in layout.groups:
+        colour = CONTAINER_STYLES.get(f"group_{g.category}", CONTAINER_STYLES["group_compute"])["stroke"]
+        for m in g.members:
+            _draw_member(buf, m, colour)
     for n in layout.global_nodes:
         _draw_node(buf, n)
     for n in layout.nodes:
@@ -166,75 +170,117 @@ def _draw_container(buf: StringIO, c: LayoutContainer) -> None:
         lx = r.x + 12 + icon_offset
         ly = r.y + 30
         buf.write(f'<text x="{lx}" y="{ly}" class="node-sublabel" '
-                  f'fill="var(--diagram-text-muted)" text-anchor="start">{_esc(c.sublabel)}</text>\n')
+                  f'fill="var(--diagram-text-muted)" style="text-anchor:start">{_esc(c.sublabel)}</text>\n')
+
+
+def _icon_ref(resource_type: str) -> str:
+    return f"#icon-{_esc_attr(resource_type if resource_type in ICONS else 'generic')}"
+
+
+def _fit(text: str, max_chars: int = 16) -> str:
+    return text if len(text) <= max_chars else text[:max_chars - 1] + "\u2026"
+
+
+def _title(text: str) -> str:
+    return f'<title>{_esc(text)}</title>' if text else ""
+
+
+def _draw_icon_with_labels(buf: StringIO, r, resource_type: str, label: str, sublabel: str,
+                           tooltip: str, stroke: str = "none") -> None:
+    full = tooltip or "\n".join(x for x in (label, sublabel) if x)
+    buf.write(f'<g>{_title(full)}\n')
+    buf.write(f'<rect x="{r.x - 2}" y="{r.y - 2}" width="{r.w + 4}" height="{r.h + 4}" '
+              f'rx="4" fill="var(--diagram-node-bg)" stroke="{stroke}" stroke-width="0.75"/>\n')
+    buf.write(f'<use href="{_icon_ref(resource_type)}" '
+              f'x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}"/>\n')
+    if label:
+        buf.write(f'<text x="{r.cx}" y="{r.bottom + 12}" class="node-label" '
+                  f'fill="var(--diagram-text-label)">{_esc(_fit(label))}</text>\n')
+    if sublabel:
+        buf.write(f'<text x="{r.cx}" y="{r.bottom + 22}" class="node-sublabel" '
+                  f'fill="var(--diagram-text-muted)">{_esc(_fit(sublabel, 20))}</text>\n')
+    buf.write('</g>\n')
 
 
 def _draw_node(buf: StringIO, n: LayoutNode) -> None:
-    """Draw a resource icon with label."""
+    """Draw a resource icon with label, plus attached child resources as mini icons."""
     r = n.rect
-    icon = get_icon(n.resource_type)
+    if n.id.startswith("overflow:"):
+        buf.write(f'<text x="{r.x}" y="{r.y + 11}" class="node-sublabel" style="text-anchor:start" '
+                  f'fill="var(--diagram-text-muted)">{_esc(n.label)}</text>\n')
+        return
+    _draw_icon_with_labels(buf, r, n.resource_type, n.label, n.sublabel, n.tooltip)
+    if n.attachments:
+        _draw_attachments(buf, n)
 
-    # Background circle/rect
-    buf.write(f'<rect x="{r.x - 2}" y="{r.y - 2}" width="{r.w + 4}" height="{r.h + 4}" '
-              f'rx="4" fill="var(--diagram-node-bg)" stroke="none"/>\n')
 
-    # Icon
-    buf.write(f'<use href="#icon-{_esc_attr(n.resource_type)}" '
-              f'x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}"/>\n')
-
-    # Label below icon
-    if n.label:
-        lx = r.cx
-        ly = r.bottom + 12
-        buf.write(f'<text x="{lx}" y="{ly}" class="node-label" '
-                  f'fill="var(--diagram-text-label)">{_esc(n.label)}</text>\n')
-
-    # Sublabel
-    if n.sublabel:
-        lx = r.cx
-        ly = r.bottom + 22
-        buf.write(f'<text x="{lx}" y="{ly}" class="node-sublabel" '
-                  f'fill="var(--diagram-text-muted)">{_esc(n.sublabel)}</text>\n')
+def _draw_attachments(buf: StringIO, n: LayoutNode) -> None:
+    """Child resources (EBS volumes, Elastic IPs…) as a row of mini icons under the parent."""
+    mini = 12
+    shown = n.attachments[:3]
+    extra = len(n.attachments) - len(shown)
+    total_w = len(shown) * (mini + 2) + (14 if extra else 0)
+    x = n.rect.cx - total_w / 2
+    y = n.rect.bottom + 27
+    # connector from parent to its children
+    buf.write(f'<line x1="{n.rect.cx}" y1="{n.rect.bottom + 24}" x2="{n.rect.cx}" y2="{y}" '
+              f'stroke="var(--diagram-text-muted)" stroke-width="0.75"/>\n')
+    for rtype, label in shown:
+        buf.write(f'<g>{_title(label)}<use href="{_icon_ref(rtype)}" x="{x}" y="{y}" '
+                  f'width="{mini}" height="{mini}"/></g>\n')
+        x += mini + 2
+    if extra:
+        buf.write(f'<text x="{x}" y="{y + 9}" class="node-sublabel" style="text-anchor:start" '
+                  f'fill="var(--diagram-text-muted)">+{extra}</text>\n')
 
 
 def _draw_group(buf: StringIO, g: LayoutGroup) -> None:
-    """Draw a multi-AZ group with a dashed border and member icons."""
-    style_key = f"group_{g.category}"
-    style = CONTAINER_STYLES.get(style_key, CONTAINER_STYLES["group_compute"])
+    """Draw a group's dashed outline and its header card (parent icon + name)."""
+    style = CONTAINER_STYLES.get(f"group_{g.category}", CONTAINER_STYLES["group_compute"])
+    colour = style["stroke"]
     r = g.rect
+    if g.outline:
+        buf.write(f'<rect x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}" '
+                  f'rx="6" fill="none" stroke="{colour}" stroke-width="{style["stroke_width"]}" '
+                  f'stroke-dasharray="{style.get("dash", "5 3")}" opacity="0.8"/>\n')
 
-    buf.write(f'<rect x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}" '
-              f'rx="4" fill="var(--diagram-group-bg)" '
-              f'stroke="{style["stroke"]}" stroke-width="{style["stroke_width"]}" '
-              f'stroke-dasharray="{style.get("dash", "5 3")}"/>\n')
+    c = g.card
+    if c is None:
+        if g.label:
+            buf.write(f'<text x="{r.x + 6}" y="{r.y - 4}" class="group-label" fill="{colour}">'
+                      f'{_esc(g.label)}{" · " + _esc(g.sublabel) if g.sublabel else ""}</text>\n')
+        return
 
-    # Label
-    if g.label:
-        lx = r.x + 6
-        ly = r.y - 4
-        buf.write(f'<text x="{lx}" y="{ly}" class="group-label" '
-                  f'fill="{style["stroke"]}">{_esc(g.label)}'
-                  f'{" · " + _esc(g.sublabel) if g.sublabel else ""}</text>\n')
-
-    # Member nodes inside the group
-    for m in g.members:
-        _draw_member(buf, m, style["stroke"])
+    buf.write(f'<g>{_title(f"{g.label} {g.sublabel}".strip())}\n')
+    buf.write(f'<rect x="{c.x}" y="{c.y}" width="{c.w}" height="{c.h}" rx="5" '
+              f'fill="var(--diagram-group-bg)" stroke="{colour}" stroke-width="1"/>\n')
+    buf.write(f'<rect x="{c.x}" y="{c.y}" width="4" height="{c.h}" rx="2" fill="{colour}"/>\n')
+    icon_size = 20
+    if g.icon:
+        buf.write(f'<use href="{_icon_ref(g.icon)}" x="{c.x + 10}" y="{c.y + 7}" '
+                  f'width="{icon_size}" height="{icon_size}"/>\n')
+    tx = c.x + 10 + (icon_size + 6 if g.icon else 0)
+    max_chars = max(8, int((c.right - tx - 6) / 5.5))
+    buf.write(f'<text x="{tx}" y="{c.y + 16}" class="container-label" fill="{colour}">'
+              f'{_esc(_fit(g.label, max_chars))}</text>\n')
+    if g.sublabel:
+        buf.write(f'<text x="{tx}" y="{c.y + 28}" class="node-sublabel" style="text-anchor:start" '
+                  f'fill="var(--diagram-text-muted)">{_esc(_fit(g.sublabel, max_chars + 4))}</text>\n')
+    if g.members:
+        buf.write(f'<line x1="{c.x + 8}" y1="{c.y + 33}" x2="{c.right - 8}" y2="{c.y + 33}" '
+                  f'stroke="{colour}" stroke-width="0.5" opacity="0.5"/>\n')
+    buf.write('</g>\n')
 
 
 def _draw_member(buf: StringIO, m: LayoutMember, group_colour: str) -> None:
-    """Draw a member icon with label inside a group."""
-    r = m.rect
-    buf.write(f'<rect x="{r.x - 2}" y="{r.y - 2}" width="{r.w + 4}" height="{r.h + 4}" '
-              f'rx="4" fill="var(--diagram-node-bg)" stroke="{group_colour}" '
-              f'stroke-width="0.5" opacity="0.8"/>\n')
-    buf.write(f'<use href="#icon-{_esc_attr(m.resource_type)}" '
-              f'x="{r.x}" y="{r.y}" width="{r.w}" height="{r.h}"/>\n')
-    if m.label:
-        buf.write(f'<text x="{r.cx}" y="{r.bottom + 11}" class="node-label" '
-                  f'fill="var(--diagram-text-label)">{_esc(m.label)}</text>\n')
-    if m.sublabel:
-        buf.write(f'<text x="{r.cx}" y="{r.bottom + 20}" class="node-sublabel" '
-                  f'fill="var(--diagram-text-muted)">{_esc(m.sublabel)}</text>\n')
+    """Draw a child resource inside its parent's group card."""
+    if m.id.startswith("overflow:"):
+        r = m.rect
+        buf.write(f'<text x="{r.cx}" y="{r.cy + 4}" class="node-label" '
+                  f'fill="var(--diagram-text-muted)">{_esc(m.label)}</text>\n')
+        return
+    _draw_icon_with_labels(buf, m.rect, m.resource_type, m.label, m.sublabel, m.tooltip,
+                           stroke=group_colour)
 
 
 def _draw_tile(buf: StringIO, t: LayoutTile) -> None:
@@ -249,7 +295,9 @@ def _draw_tile(buf: StringIO, t: LayoutTile) -> None:
 
     # Icon
     icon_size = 24
-    buf.write(f'<use href="#icon-{_esc_attr(t.icon)}" '
+    if t.names:
+        buf.write(_title(f"{t.service}: " + ", ".join(n for n in t.names if n)))
+    buf.write(f'<use href="{_icon_ref(t.icon)}" '
               f'x="{r.x + 8}" y="{r.y + (r.h - icon_size) / 2}" '
               f'width="{icon_size}" height="{icon_size}"/>\n')
 
@@ -278,8 +326,8 @@ def _draw_edge(buf: StringIO, e: LayoutEdge) -> None:
 
     # Edge label at midpoint
     if e.label and len(e.points) >= 2:
-        mid_idx = len(e.points) // 2
-        mx, my = e.points[mid_idx]
+        (x1, y1), (x2, y2) = e.points[-2], e.points[-1]
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
         buf.write(f'<text x="{mx}" y="{my - 4}" class="edge-label" '
                   f'fill="{style["stroke"]}" text-anchor="middle">{_esc(e.label)}</text>\n')
 

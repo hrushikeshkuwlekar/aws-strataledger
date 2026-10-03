@@ -301,7 +301,22 @@ ICONS: dict[str, dict] = {
         "fill": PALETTE["networking"],
         "category": "networking",
     },
+    "elastic_ip": {
+        "path": "M12 2a10 10 0 110 20 10 10 0 010-20zm0 3a7 7 0 100 14 7 7 0 000-14zM9 8h6v2h-4v1h3v2h-3v1h4v2H9V8z",
+        "fill": PALETTE["networking"],
+        "category": "networking",
+    },
+    "vpn_connection": {
+        "path": "M7 7a5 5 0 014.9 4H22v2h-2v3h-3v-3h-5.1A5 5 0 117 7zm0 3a2 2 0 100 4 2 2 0 000-4z",
+        "fill": PALETTE["networking"],
+        "category": "networking",
+    },
     # ── Additional Compute ──
+    "fargate": {
+        "path": "M12 2l9 5v10l-9 5-9-5V7l9-5zm0 2.3L5 8.2v7.6l7 3.9 7-3.9V8.2l-7-3.9zM9 9h6v2h-4v1h3v2h-3v2H9V9z",
+        "fill": PALETTE["container"],
+        "category": "compute",
+    },
     "eks_nodegroup": {
         "path": "M4 4h7v7H4V4zm9 0h7v7h-7V4zm-9 9h7v7H4v-7zm9 0h7v7h-7v-7zM6 6v3h3V6H6zm9 0v3h3V6h-3zM6 15v3h3v-3H6zm9 0v3h3v-3h-3z",
         "fill": PALETTE["container"],

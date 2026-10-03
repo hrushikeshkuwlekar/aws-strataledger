@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `svg.py` — renders LayoutResult as self-contained SVG with dark/light theme support via CSS custom properties.
   - `icons.py` — AWS 2023 palette with simplified SVG icon paths for all resource types.
 - **Route-Table-Based Subnet Tier Classification**: Subnets classified by their effective route table destination (IGW → public, NAT/TGW → app, local-only → data), with tag override via `strataledger:tier`.
+- **Parent → Child Resource Nesting**: Multi-subnet constructs get a header card in their tier column with their children inside — ALB/NLB → target groups (with healthy/total), EKS → managed node groups + Fargate, Aurora → writer/reader instances, ElastiCache replication group → member clusters, VPC Lambda → functions. EC2 shows attached EBS volumes and Elastic IPs as mini icons; NAT shows its EIP. Network Firewall and EFS show an endpoint / mount target in every subnet they occupy.
+- **Relationship Edges**: Route 53 alias → ALB/CLB/RDS/API GW, target group → EC2 / ECS service, CLB → instances, NAT → IGW, TGW → attached VPCs, Customer GW → VPN → VGW/TGW, WAF → protected ALB/API GW, S3/DynamoDB gateway endpoints → service tiles, cross-region replication between tiles.
+- **Hover Tooltips**: Every icon, card and tile carries full details (instance type, EBS devices, security groups, tunnel status).
+- **Diagram Fixes**: Aurora clusters, ElastiCache replication groups, TGW→VPC, Route 53 alias and replication edges were never drawn because they read fields the collectors don't emit; multiple subnets of the same tier in one AZ were silently dropped; most service tiles never matched their inventory keys; subnet icons/labels overlapped.
 - **Removed Cytoscape.js & Topology Tab**: Eliminated ~800 lines of Cytoscape JS code and the Topology tab. The Architecture tab now shows the server-side SVG diagrams.
 
 ### 🔒 Security Hardening
@@ -42,8 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SVG Diagram Bug Fix**: SVG output is now wrapped in `Markup` so Jinja2 autoescape doesn't entity-escape diagram tags.
 
 ### 🧪 Quality
-- **pytest Test Suite**: 74 unit tests covering diagram model, layout, report generation, XSS prevention, collector helpers, scanner utilities, and CLI.
-- **GitHub Actions CI**: Matrix testing (Python 3.9/3.11/3.12) with ruff lint and pytest on push/PR.
+- **pytest Test Suite**: 83 unit tests covering diagram model, layout, report generation, XSS prevention, collector helpers, scanner utilities, and CLI.
 
 ### 🔧 Collectors
 - All collectors rewritten with ClientFactory, pagination, and issue recording.
