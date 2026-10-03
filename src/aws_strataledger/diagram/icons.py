@@ -295,6 +295,40 @@ ICONS: dict[str, dict] = {
         "fill": PALETTE["generic"],
         "category": "global",
     },
+    # ── Additional Networking ──
+    "customer_gateway": {
+        "path": "M12 2L3 7v10l9 5 9-5V7l-9-5zm0 4l5 3v6l-5 3-5-3V9l5-3zm-1 4v2h2v-2h-2z",
+        "fill": PALETTE["networking"],
+        "category": "networking",
+    },
+    # ── Additional Compute ──
+    "eks_nodegroup": {
+        "path": "M4 4h7v7H4V4zm9 0h7v7h-7V4zm-9 9h7v7H4v-7zm9 0h7v7h-7v-7zM6 6v3h3V6H6zm9 0v3h3V6h-3zM6 15v3h3v-3H6zm9 0v3h3v-3h-3z",
+        "fill": PALETTE["container"],
+        "category": "compute",
+    },
+    # ── Additional Storage ──
+    "ebs_volume": {
+        "path": "M12 2C7.58 2 4 3.34 4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5c0-1.66-3.58-3-8-3zm6 17c0 .55-2.69 1-6 1s-6-.45-6-1v-3.07c1.38.63 3.52 1.07 6 1.07s4.62-.44 6-1.07V19zm0-6c0 .55-2.69 1-6 1s-6-.45-6-1v-3.07c1.38.63 3.52 1.07 6 1.07s4.62-.44 6-1.07V13zm0-6c0 .55-2.69 1-6 1s-6-.45-6-1V5c0-.55 2.69-1 6-1s6 .45 6 1v2z",
+        "fill": PALETTE["storage"],
+        "category": "storage",
+    },
+    "backup": {
+        "path": "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14l-5-5h3V8h4v4h3l-5 5z",
+        "fill": PALETTE["storage"],
+        "category": "storage",
+    },
+    # ── Additional Security / Identity ──
+    "acm": {
+        "path": "M12 2L3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6l-9-4zm0 4l5 2.5v5c0 3.33-2.13 6.44-5 7.41V6z",
+        "fill": PALETTE["security"],
+        "category": "security",
+    },
+    "cloudhsm": {
+        "path": "M18 8h-1V6A5 5 0 007 6v2H6a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V10a2 2 0 00-2-2zM9 6a3 3 0 016 0v2H9V6zm3 12a3 3 0 110-6 3 3 0 010 6z",
+        "fill": PALETTE["security"],
+        "category": "security",
+    },
     # ── Generic ──
     "generic": {
         "path": "M4 4h16v16H4V4zm2 2v12h12V6H6z",

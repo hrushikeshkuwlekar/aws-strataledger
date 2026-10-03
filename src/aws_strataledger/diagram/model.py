@@ -225,6 +225,16 @@ TILE_SERVICES = {
     "cloudwatch_log_group": ("CloudWatch", "cloudwatch"),
     "eventbridge_rule": ("EventBridge", "eventbridge"),
     "ssm_parameter": ("SSM Params", "generic"),
+    "ebs_volumes": ("EBS", "ebs_volume"),
+    "ebs_snapshots": ("EBS Snaps", "ebs_volume"),
+    "rds_snapshots": ("RDS Snaps", "rds_instance"),
+    "backup_vaults": ("Backup", "backup"),
+    "backup_plans": ("Backup", "backup"),
+    "guardduty_detectors": ("GuardDuty", "guardduty"),
+    "acm_certificates": ("ACM", "acm"),
+    "cloudhsm_clusters": ("CloudHSM", "cloudhsm"),
+    "ecs_clusters": ("ECS", "ecs_cluster"),
+    "ec2_amis": ("AMIs", "ec2_instance"),
 }
 
 # Resources that go in VPCs (placed in subnets/groups)
@@ -233,6 +243,7 @@ VPC_RESOURCE_TYPES = {
     "ecs_service", "eks_cluster", "elasticache_replication_group",
     "elasticache_cluster", "opensearch_domain", "redshift_cluster",
     "efs_filesystem", "lambda_function", "network_firewall",
+    "load_balancer_v2", "load_balancer_classic",
 }
 
 
@@ -319,6 +330,26 @@ def _build_global_nodes(model: DiagramModel, global_data: dict) -> None:
             label="IAM",
             container_id="global",
             sublabel=f"{len(users)} users, {len(roles)} roles",
+        )
+        model.global_nodes.append(node)
+        model.all_nodes[node.id] = node
+
+    # CloudFront distributions
+    cf = global_data.get("networking", {})
+    distributions = cf.get("cloudfront_distributions", [])
+    if not distributions:
+        for cat_data in global_data.values():
+            if isinstance(cat_data, dict):
+                distributions = cat_data.get("cloudfront_distributions", [])
+                if distributions:
+                    break
+    if distributions:
+        node = DiagramNode(
+            id="global:cloudfront",
+            resource_type="cloudfront",
+            label="CloudFront",
+            container_id="global",
+            sublabel=f"{len(distributions)} distributions",
         )
         model.global_nodes.append(node)
         model.all_nodes[node.id] = node
@@ -448,11 +479,15 @@ def _build_region(
     _place_ec2(model, region, compute, subnet_map)
     _place_rds(model, region, storage, subnet_map)
     _place_nat_gateways(model, region, net, subnet_map)
+    _place_load_balancers(model, region, net, subnet_map)
     _place_ecs_services(model, region, compute, subnet_map)
     _place_eks_clusters(model, region, compute, subnet_map)
     _place_asgs(model, region, compute, subnet_map)
     _place_lambda_vpc(model, region, compute, subnet_map)
     _place_elasticache(model, region, storage, subnet_map)
+    _place_opensearch(model, region, storage, subnet_map)
+    _place_redshift(model, region, storage, subnet_map)
+    _place_efs(model, region, storage, subnet_map)
     _place_nfw(model, region, nfws, subnet_map)
 
     # Mark VPCs with workloads
@@ -495,11 +530,56 @@ def _build_region(
         region.gutter_nodes.append(node)
         model.all_nodes[node.id] = node
 
-    for apigw in compute.get("api_gateway_rest", []) + net.get("api_gateway_rest", []):
+    for apigw in compute.get("api_gateway_rest_apis", []) + compute.get("api_gateway_rest", []) + net.get("api_gateway_rest_apis", []) + net.get("api_gateway_rest", []):
         node = DiagramNode(
             id=_node_id("api_gateway_rest", apigw.get("resource_id", "")),
             resource_type="api_gateway_rest",
             label=_safe_label(apigw.get("name", "")),
+            container_id=f"gutter:{region_name}",
+        )
+        region.gutter_nodes.append(node)
+        model.all_nodes[node.id] = node
+
+    # API Gateway HTTP APIs
+    for apigw in compute.get("api_gateway_http_apis", []) + net.get("api_gateway_http_apis", []):
+        node = DiagramNode(
+            id=_node_id("api_gateway_http", apigw.get("resource_id", "")),
+            resource_type="api_gateway_http",
+            label=_safe_label(apigw.get("name", "")),
+            container_id=f"gutter:{region_name}",
+        )
+        region.gutter_nodes.append(node)
+        model.all_nodes[node.id] = node
+
+    # Direct Connect
+    for dx in net.get("direct_connect_connections", []):
+        node = DiagramNode(
+            id=_node_id("direct_connect", dx.get("resource_id", "")),
+            resource_type="direct_connect",
+            label=_safe_label(dx.get("name", "") or "DX"),
+            container_id=f"gutter:{region_name}",
+            sublabel=dx.get("bandwidth", ""),
+        )
+        region.gutter_nodes.append(node)
+        model.all_nodes[node.id] = node
+
+    # Customer Gateways
+    for cgw in net.get("customer_gateways", []):
+        node = DiagramNode(
+            id=_node_id("customer_gateway", cgw.get("resource_id", "")),
+            resource_type="customer_gateway",
+            label=_safe_label(cgw.get("name", "") or "CGW"),
+            container_id=f"gutter:{region_name}",
+        )
+        region.gutter_nodes.append(node)
+        model.all_nodes[node.id] = node
+
+    # WAF Web ACLs
+    for waf in net.get("waf_web_acls", []) + security.get("waf_web_acls", []):
+        node = DiagramNode(
+            id=_node_id("waf_web_acl", waf.get("resource_id", "")),
+            resource_type="waf_web_acl",
+            label=_safe_label(waf.get("name", "") or "WAF"),
             container_id=f"gutter:{region_name}",
         )
         region.gutter_nodes.append(node)
@@ -597,16 +677,33 @@ def _place_ecs_services(model: DiagramModel, region: RegionModel, compute: dict,
 
 
 def _place_eks_clusters(model: DiagramModel, region: RegionModel, compute: dict, subnet_map: dict) -> None:
-    """Place EKS clusters as groups spanning their node group subnets."""
+    """Place EKS clusters as groups spanning their node group subnets, with node group nodes."""
     for cluster in compute.get("eks_clusters", []):
-        # Prefer node group subnets over cluster subnets
         all_subnets: set[str] = set()
-        for ng in cluster.get("node_groups", []):
-            all_subnets.update(ng.get("subnet_ids", []))
+        node_groups = cluster.get("node_groups", [])
+
+        # Place individual node group nodes in their subnets
+        for ng in node_groups:
+            ng_subnets = ng.get("subnet_ids", [])
+            all_subnets.update(ng_subnets)
+            if ng_subnets:
+                scaling = ng.get("scaling", {})
+                desired = scaling.get("desiredSize", scaling.get("desired_size", "?"))
+                node = DiagramNode(
+                    id=_node_id("eks_nodegroup", ng.get("name", "")),
+                    resource_type="eks_nodegroup",
+                    label=_safe_label(ng.get("name", "")),
+                    container_id=ng_subnets[0],
+                    sublabel=f"{ng.get('capacity_type', '')} ×{desired}",
+                )
+                model.all_nodes[node.id] = node
+                _add_to_subnet(region, ng_subnets[0], node.id)
+
         if not all_subnets:
             all_subnets = set(cluster.get("subnet_ids", []))
         if not all_subnets:
             continue
+
         group = DiagramGroup(
             id=_node_id("eks_cluster", cluster.get("resource_id", "")),
             label=_safe_label(cluster.get("name", "")),
@@ -684,6 +781,91 @@ def _place_nfw(model: DiagramModel, region: RegionModel, nfws: list[dict], subne
             id=_node_id("network_firewall", fw.get("resource_id", "")),
             label=_safe_label(fw.get("name", "") or "NFW"),
             category="security",
+            subnet_ids=subnet_ids,
+        )
+        _add_group_to_vpc(region, subnet_ids, group)
+
+
+def _place_load_balancers(model: DiagramModel, region: RegionModel, net: dict, subnet_map: dict) -> None:
+    """Place ALB/NLB as groups spanning their subnets, CLBs similarly."""
+    for lb in net.get("load_balancers_v2", []):
+        subnet_ids = lb.get("subnet_ids", [])
+        if not subnet_ids:
+            continue
+        lb_type = lb.get("type", "application")
+        rt = "load_balancer_v2"
+        group = DiagramGroup(
+            id=_node_id("load_balancer_v2", lb.get("resource_id", "")),
+            label=_safe_label(lb.get("name", "")),
+            category="networking",
+            subnet_ids=subnet_ids,
+            sublabel=lb_type.upper(),
+        )
+        _add_group_to_vpc(region, subnet_ids, group)
+
+    for lb in net.get("load_balancers_classic", []):
+        subnet_ids = lb.get("subnet_ids", [])
+        if not subnet_ids:
+            continue
+        group = DiagramGroup(
+            id=_node_id("load_balancer_classic", lb.get("resource_id", "")),
+            label=_safe_label(lb.get("name", "")),
+            category="networking",
+            subnet_ids=subnet_ids,
+            sublabel="CLB",
+        )
+        _add_group_to_vpc(region, subnet_ids, group)
+
+
+def _place_opensearch(model: DiagramModel, region: RegionModel, storage: dict, subnet_map: dict) -> None:
+    """Place OpenSearch domains in their subnets."""
+    for domain in storage.get("opensearch_domains", []):
+        subnet_ids = domain.get("subnet_ids", [])
+        if not subnet_ids:
+            continue
+        group = DiagramGroup(
+            id=_node_id("opensearch_domain", domain.get("resource_id", "")),
+            label=_safe_label(domain.get("name", "") or "OpenSearch"),
+            category="database",
+            subnet_ids=subnet_ids,
+            sublabel=domain.get("engine_version", ""),
+        )
+        _add_group_to_vpc(region, subnet_ids, group)
+
+
+def _place_redshift(model: DiagramModel, region: RegionModel, storage: dict, subnet_map: dict) -> None:
+    """Place Redshift clusters in their subnets."""
+    for cluster in storage.get("redshift_clusters", []):
+        subnet_id = cluster.get("subnet_id", "")
+        if not subnet_id:
+            subnet_ids = cluster.get("subnet_ids", [])
+            if not subnet_ids:
+                continue
+        else:
+            subnet_ids = [subnet_id]
+        group = DiagramGroup(
+            id=_node_id("redshift_cluster", cluster.get("resource_id", "")),
+            label=_safe_label(cluster.get("name", "") or "Redshift"),
+            category="database",
+            subnet_ids=subnet_ids,
+            sublabel=cluster.get("node_type", ""),
+        )
+        _add_group_to_vpc(region, subnet_ids, group)
+
+
+def _place_efs(model: DiagramModel, region: RegionModel, storage: dict, subnet_map: dict) -> None:
+    """Place EFS file systems as groups spanning their mount target subnets."""
+    for fs in storage.get("efs_file_systems", []):
+        subnet_ids = fs.get("subnet_ids", [])
+        if not subnet_ids:
+            mount_targets = fs.get("mount_targets", [])
+            subnet_ids = [mt.get("subnet_id", "") for mt in mount_targets if mt.get("subnet_id")]
+        if not subnet_ids:
+            continue
+        group = DiagramGroup(
+            id=_node_id("efs_filesystem", fs.get("resource_id", "")),
+            label=_safe_label(fs.get("name", "") or "EFS"),
+            category="storage",
             subnet_ids=subnet_ids,
         )
         _add_group_to_vpc(region, subnet_ids, group)
