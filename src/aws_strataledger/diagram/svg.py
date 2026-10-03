@@ -18,6 +18,13 @@ from .layout import (
 )
 
 
+_CONTAINER_ICONS = {
+    "vpc": "vpc",
+    "region": "generic",
+    "aws_cloud": "internet",
+}
+
+
 def render_svg(layout: LayoutResult, theme: str = "dark") -> str:
     """
     Render a LayoutResult as an SVG string.
@@ -137,16 +144,26 @@ def _draw_container(buf: StringIO, c: LayoutContainer) -> None:
               f'rx="{rx}" '
               f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{dash_attr}/>\n')
 
-    # Header label
+    # Container icon + header label
+    icon_key = _CONTAINER_ICONS.get(c.kind)
+    icon_offset = 0
+    if icon_key and c.label:
+        icon_size = 18
+        ix = r.x + 8
+        iy = r.y + 6
+        buf.write(f'<use href="#icon-{_esc_attr(icon_key)}" '
+                  f'x="{ix}" y="{iy}" width="{icon_size}" height="{icon_size}"/>\n')
+        icon_offset = icon_size + 4
+
     if c.label:
-        lx = r.x + 12
+        lx = r.x + 12 + icon_offset
         ly = r.y + 18
         buf.write(f'<text x="{lx}" y="{ly}" class="container-label" '
                   f'fill="{stroke}">{_esc(c.label)}</text>\n')
 
     # Sublabel (CIDR for VPCs, etc.)
     if c.sublabel:
-        lx = r.x + 12
+        lx = r.x + 12 + icon_offset
         ly = r.y + 30
         buf.write(f'<text x="{lx}" y="{ly}" class="node-sublabel" '
                   f'fill="var(--diagram-text-muted)" text-anchor="start">{_esc(c.sublabel)}</text>\n')
